@@ -1382,13 +1382,12 @@ int vu_jit_ahead(int wait, int *queued) {
         u32 num, addr;
         if (!mpg_code(a, &num, &addr) || addr != 0) continue;
         memset(code, 0, sizeof code);
-        u32 p = a, at = 0, end = 0, packets = 0;
+        u32 p = a, at = 0, end = 0;
         for (;;) {
             u32 bytes = num * 8;
             if (at * 8 + bytes > 0x4000 || p + 4 + bytes > MS_DATA_TO) break;
             memcpy(code + at * 8, rt_ram + p + 4, bytes);
             end = at * 8 + bytes;
-            packets++;
             u32 next = p + 4 + bytes, found = 0, n2 = 0, a2 = 0;
             for (u32 q = next; q < next + 20 && q + 4 <= MS_DATA_TO; q += 4)
                 if (q % 8 == 4 && mpg_code(q, &n2, &a2) && a2 == at + num) { found = q; break; }

@@ -69,10 +69,9 @@ Other references worth reading when stuck (not cloned by default):
 
 ## Environment
 
-- Developed in **WSL2 Ubuntu** on Windows. Work inside the Linux filesystem (`~/`), not `/mnt/g`, for speed.
-- The ISO lives on Windows at
-  `G:\Sistema\Usuarios\Leandro\Descargas\MS Saga - A New Dawn (USA)\MS Saga - A New Dawn (USA).iso`
-  → in WSL: `/mnt/g/Sistema/Usuarios/Leandro/Descargas/MS Saga - A New Dawn (USA)/MS Saga - A New Dawn (USA).iso`.
+- Developed on **CachyOS** (Arch-based). Dependencies via `pacman`: `base-devel python sdl3 vulkan-headers
+  glslang pkgconf git`. Windows binaries are cross-compiled with `build-win.sh` (MinGW-w64 + SDL3).
+- The ISO lives at `/home/lea/Downloads/MS Saga - A New Dawn (USA).iso`.
   `disc/game.iso` is a symlink to it; `disc/SLUS_212.70` is extracted from it (both gitignored).
 - Verify a change: the game still reaches the furthest milestone reached; compare `--shot`-style screenshots
   before/after; compare against PCSX2 when behaviour is in doubt.
