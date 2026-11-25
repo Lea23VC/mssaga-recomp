@@ -5,22 +5,33 @@
 #   tools/win_deps.sh   once: SDL3 for MinGW into tools/win/
 #   ./build-win.sh      -> build-win/mssaga.exe, SDL3.dll, disc/SLUS_212.70 (a copy), mssaga.bat
 #
-# Needs x86_64-w64-mingw32-gcc-posix (sudo apt install mingw-w64). build-win/ and tools/win/ stay out of git:
+# Needs MinGW-w64 with POSIX threads (CachyOS/Arch: pacman -S mingw-w64-gcc; Ubuntu: apt install mingw-w64). build-win/ and tools/win/ stay out of git:
 # build-win/disc/ holds a copy of the executable from your disc. Run mssaga.bat from Windows: it passes the ISO's
 # Windows path (edit it if yours is elsewhere); mssaga.exe alone asks for the disc image once and remembers it.
 # Under Windows the GPU renderer uses the real graphics card.
 set -eu
 cd "$(dirname "$0")"
 
-CC=x86_64-w64-mingw32-gcc-posix
+CC=x86_64-w64-mingw32-gcc-posix                 # Ubuntu's name; Arch's plain one is POSIX threads already
+command -v $CC >/dev/null || CC=x86_64-w64-mingw32-gcc
 SDL=tools/win/SDL3-3.2.30/x86_64-w64-mingw32
-command -v $CC >/dev/null || { echo "missing $CC: sudo apt install mingw-w64"; exit 1; }
+command -v $CC >/dev/null || { echo "missing MinGW-w64: pacman -S mingw-w64-gcc (or apt install mingw-w64)"; exit 1; }
 [ -d "$SDL" ] || { echo "missing $SDL: run tools/win_deps.sh"; exit 1; }
 [ -f build/recomp/functab.c ] && [ -f build/dll/c/dlls.c ] && [ -f build/shaders/shaders.h ] && [ -f build/vu/vu_builtin.c ] || {
     echo "run ./build.sh first (it writes the translated C and the shaders)"; exit 1; }
 
 FLAGS="-fno-strict-aliasing -ffp-contract=off -march=x86-64-v2 -D_FILE_OFFSET_BITS=64 -DMSSAGA_SDL3"   # sound through SDL
 INC="-Iport/runtime -Iport/kernel -Iport/iop -Iport/gs -Ibuild/recomp -Ibuild/dll/c -Ibuild/shaders -I$SDL/include"
+# FFmpeg plays the movies (port/hle/movie.c); without it they are skipped
+FF=$(ls -d tools/win/ffmpeg-*-win64-lgpl-shared-* 2>/dev/null | head -1)
+FF_LIBS=""
+if [ -n "$FF" ]; then
+    FLAGS="$FLAGS -DMSSAGA_FFMPEG"
+    INC="$INC -I$FF/include"
+    FF_LIBS="-L$FF/lib -lavformat -lavcodec -lavutil -lswscale -lswresample"
+else
+    echo "no FFmpeg in tools/win (tools/win_deps.sh): the movies are skipped"
+fi
 mkdir -p build-win/obj build-win/disc
 
 # the translated code: -O1, no warnings (generated); the port: -O2
@@ -34,9 +45,10 @@ compile -O2 build/vu/*.c                       # the game's VU1 programs (build.
 compile -O2 port/*.c port/runtime/*.c port/kernel/*.c port/iop/*.c port/hle/*.c port/gs/*.c port/iop/lle/*.c
 
 # console program for now (the log shows in its window); -mwindows would hide it
-$CC -static-libgcc -o build-win/mssaga.exe build-win/obj/*.o -L$SDL/lib -lSDL3 \
+$CC -static-libgcc -o build-win/mssaga.exe build-win/obj/*.o -L$SDL/lib -lSDL3 $FF_LIBS \
     -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic -lm
 cp "$SDL/bin/SDL3.dll" build-win/
+[ -z "$FF" ] || for l in avformat avcodec avutil swscale swresample; do cp "$FF"/bin/$l-*.dll build-win/; done
 install -m 644 disc/SLUS_212.70 build-win/disc/SLUS_212.70   # a writable copy (the original is read-only)
 cat > build-win/mssaga.bat <<'EOF'
 @echo off

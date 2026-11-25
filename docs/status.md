@@ -7,7 +7,9 @@ The two Sofdec movies are AFS entries 25753 `gto_op.sfd` (the opening, 122.6 s) 
 GetStat / Stop / StopAll: the AFS entry is decoded by FFmpeg on a thread of its own, its pictures shown instead of the
 game's, its sound mixed in; the slot says 1 while playing and 3 at the end, START skips. Tested after NEW GAME: the
 movie plays with sound, START skips to the prologue, and left alone it ends at 122.6 s and the prologue follows.
-`build.sh` uses FFmpeg when pkg-config finds it; `build-win.sh` doesn't yet (movies skipped there).
+`build.sh` uses FFmpeg when pkg-config finds it. Windows: `tools/win_deps.sh` also fetches BtbN's FFmpeg 8.1 LGPL
+shared build; `build-win.sh` links it (and copies its 5 DLLs) when present, and takes Arch's `x86_64-w64-mingw32-gcc`
+(POSIX threads, UCRT). Cross-built on CachyOS; not yet run on Windows.
 
 ## First battle, first save (2026-11-25)
 
