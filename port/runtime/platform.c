@@ -46,6 +46,12 @@ int platform_exe_dir(char *out, size_t n) {
 }
 
 void platform_data_dir(char *out, size_t n) {
+    const char *given = getenv("MSSAGA_DATA");      /* MS Saga: --data <dir> (main.c): everything there */
+    if (given && *given) {
+        snprintf(out, n, "%s", given);
+        mkdir(out, 0755);
+        return;
+    }
     char base[1024];
 #ifdef _WIN32
     const char *a = getenv("APPDATA");
@@ -66,6 +72,12 @@ void platform_data_dir(char *out, size_t n) {
 }
 
 void platform_cache_base(char *out, size_t n) {
+    const char *given = getenv("MSSAGA_DATA");      /* MS Saga: with --data, caches in its cache folder */
+    if (given && *given) {
+        snprintf(out, n, "%s/cache", given);
+        mkdir(out, 0755);
+        return;
+    }
     const char *d = getenv("XDG_CACHE_HOME"), *h = getenv("HOME");
     if (d && *d) snprintf(out, n, "%s", d);
 #ifdef __APPLE__

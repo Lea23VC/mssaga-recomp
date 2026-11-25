@@ -1,8 +1,13 @@
 /*
  * MS Saga: A New Dawn, native: entry point.
  *
- *     mssaga [SLUS_212.70] [--iso game.iso] [-q | -v | -vv] [--trace]
+ *     mssaga [SLUS_212.70] [--iso game.iso | --game game.iso] [--data dir] [-q | -v | -vv] [--trace]
+ *            [--widescreen on|off] [--window full|WxH] [--vsync on|off]
  *            [--shot 300,600,...] [--press "1100:CROSS,..."]
+ *
+ * --data dir: everything the port writes (memory card, settings, the copied executable, log, caches) goes in dir
+ * instead of the usual per-user folder (RecompLauncher passes its {data}). --widescreen, --window and --vsync set
+ * MSSAGA_WIDESCREEN, MSSAGA_WINDOW and MSSAGA_VSYNC for this run. --game is --iso by its standard name.
  *     mssaga --gen-vu dir       (the build) the game's VU1 programs as C into dir, then exit
  *
  * Loads the executable into guest RAM (its code is the recompiled C linked into this program; the image is still
@@ -51,6 +56,17 @@ void perf_calibrate(void);
 int vu_jit_generate(const char *dir);     /* gs/vu_jit.c */
 
 static u32 entry;
+
+static void set_env(const char *name, const char *value) {   /* for this run (and the threads it starts) */
+#ifdef _WIN32
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 1);
+#endif
+}
+
+/* --widescreen on / off, --vsync on / off: 1 or 0, else -1 */
+static int on_off(const char *v) { return !strcmp(v, "on") ? 1 : !strcmp(v, "off") ? 0 : -1; }
 
 /* No disc/SLUS_212.70 next to the program (a Windows folder carries nothing from the game): the executable is
  * copied out of the disc image once, into the settings folder. 1 if path names it. */
@@ -197,9 +213,6 @@ int main(int argc, char **argv) {
     /* SDL's SIGINT/SIGTERM handlers only queue a quit event, which --shot never reads: `timeout` and Ctrl+C
      * could not stop a test run. Keep the default signals (the window still closes with its close button). */
     SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
-#ifdef _WIN32
-    win_log_setup();
-#endif
     const char *elf = NULL, *iso = NULL, *gen_vu = NULL;
     int shots[64], nshots = 0;
     for (int i = 1; i < argc; i++) {
@@ -207,7 +220,15 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-v")) rt_verbose = 2;
         else if (!strcmp(argv[i], "-vv")) rt_verbose = 3;
         else if (!strcmp(argv[i], "--trace")) rt_trace_on = 1;
-        else if (!strcmp(argv[i], "--iso") && i + 1 < argc) iso = argv[++i];
+        else if ((!strcmp(argv[i], "--iso") || !strcmp(argv[i], "--game")) && i + 1 < argc) iso = argv[++i];
+        else if (!strcmp(argv[i], "--data") && i + 1 < argc) set_env("MSSAGA_DATA", argv[++i]);
+        else if ((!strcmp(argv[i], "--widescreen") || !strcmp(argv[i], "--vsync")) && i + 1 < argc) {
+            int v = on_off(argv[i + 1]);
+            if (v < 0) return fail("%s takes on or off, not %s", argv[i], argv[i + 1]);
+            set_env(argv[i][2] == 'w' ? "MSSAGA_WIDESCREEN" : "MSSAGA_VSYNC", v ? "1" : "0");
+            i++;
+        }
+        else if (!strcmp(argv[i], "--window") && i + 1 < argc) set_env("MSSAGA_WINDOW", argv[++i]);
         else if (!strcmp(argv[i], "--gen-vu") && i + 1 < argc) gen_vu = argv[++i];
         else if (!strcmp(argv[i], "--press") && i + 1 < argc) display_set_presses(argv[++i]);
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) {
@@ -218,6 +239,9 @@ int main(int argc, char **argv) {
         }
         else elf = argv[i];
     }
+#ifdef _WIN32
+    win_log_setup();                              /* after --data: the log goes there */
+#endif
     if (!elf) elf = find_file("disc/SLUS_212.70");
     if (gen_vu) {
         if (!elf) return fail("--gen-vu needs the game's executable (disc/SLUS_212.70)");                                 /* the build: only the executable is needed */

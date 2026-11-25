@@ -18,11 +18,11 @@ int platform_exe_dir(char *out, size_t n);
 
 /* where the settings and the memory card live, created if missing: ~/.local/share/mssaga
  * ($XDG_DATA_HOME/mssaga) on Linux, %APPDATA%\mssaga on Windows, ~/Library/Application Support/mssaga
- * on macOS ($XDG_DATA_HOME/mssaga there too when it is set) */
+ * on macOS ($XDG_DATA_HOME/mssaga there too when it is set); MS Saga: $MSSAGA_DATA (--data) when set */
 void platform_data_dir(char *out, size_t n);
 
 /* the folder for caches (the VU1 programs compiled at run time), without the mssaga part:
- * $XDG_CACHE_HOME or ~/.cache on Linux, ~/Library/Caches on macOS */
+ * $XDG_CACHE_HOME or ~/.cache on Linux, ~/Library/Caches on macOS; MS Saga: $MSSAGA_DATA/cache when set */
 void platform_cache_base(char *out, size_t n);
 
 /* aligned memory: freed with platform_aligned_free */
