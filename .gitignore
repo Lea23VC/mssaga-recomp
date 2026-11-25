@@ -9,6 +9,7 @@ disc/*
 *.irx
 *.IMG
 SLUS_*
+!config/SLUS_212.70.sha1
 SLPS_*
 *.ppm
 ram_*.bin
