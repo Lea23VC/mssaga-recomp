@@ -465,10 +465,13 @@ extern int gpu_on;
 static void prim_log(int ctx, int type) {
     static int want = -2;
     if (want == -2) want = getenv("MSSAGA_PRIMS") ? atoi(getenv("MSSAGA_PRIMS")) : -1;
-    static int shown;
+    static int shown, big = -1;
     if (want < 0 || (int)kernel_vblank_count() < want || shown >= 40) return;
-    shown++;
     const Vertex *a = &gs.vtx[0], *b = &gs.vtx[gs.vcount ? gs.vcount - 1 : 0];
+    /* MS Saga: MSSAGA_PRIMS_BIG=1 lists only primitives at least 200 pixels wide (full-screen effects) */
+    if (big < 0) big = getenv("MSSAGA_PRIMS_BIG") != NULL;
+    if (big && (b->x > a->x ? b->x - a->x : a->x - b->x) < 200) return;
+    shown++;
     u64 t0 = gs.tex0[ctx], fr = gs.frame[ctx];
     fprintf(stderr, "  [%u] prim %d ctx %d (%.1f,%.1f)-(%.1f,%.1f) z %08X rgba %02X%02X%02X%02X tme %d abe %d tex %04X psm %02X "
                     "%dx%d | fbp %03X fbw %u fpsm %02X fbmsk %08X | scissor %llX alpha %llX test %llX\n",
@@ -633,17 +636,24 @@ static void seal_locked(void) {
 
 u32 gpu_frames_sealed(void) { return rec_frame; }
 
+static int flips_seen;                     /* MS Saga: the game shows its pictures by writing DISPFB */
+
 void gpu_seal_frame(void) {
     pthread_mutex_lock(&rec_lock);
+    flips_seen = 1;
     seal_locked();
     pthread_mutex_unlock(&rec_lock);
 }
 
 /* Window's thread, at every vertical blank: a game that shows pictures without writing DISPFB
- * (one buffer) still gets its frames out, a few vertical blanks late. */
+ * (one buffer) still gets its frames out, a few vertical blanks late.
+ * MS Saga: only the newest sealed frame is drawn, so a frame sealed here in the middle of a picture lost the
+ * draws before the cut (models missing, the background not cleared: flashing). The game writes DISPFB, but a
+ * picture can take more than 3 vertical blanks (on Windows, with VU1 interpreted: 42 ms on average, more at
+ * times). Once DISPFB writes have been seen, only a long pause (60 vertical blanks) seals here. */
 void gpu_vblank_tick(void) {
     pthread_mutex_lock(&rec_lock);
-    if (rec->ndraws && kernel_vblank_count() - last_seal_vb >= 3) seal_locked();
+    if (rec->ndraws && kernel_vblank_count() - last_seal_vb >= (flips_seen ? 60u : 3u)) seal_locked();
     pthread_mutex_unlock(&rec_lock);
 }
 

@@ -1,5 +1,18 @@
 # Status
 
+## GPU renderer: models missing and flashing, fixed (2026-11-25)
+
+On Windows (the real GPU) models were missing (the GM showed only its glowing parts, Tristan only her hair), the
+background was white, and frames flashed. Cause: RenderWare draws nearly everything with the alpha test's fail mode
+FB_ONLY (TEST 0x5140B: alpha GEQUAL 0x40, failing pixels write colour but not depth, depth GEQUAL). The reference's
+GPU renderer approximated it by turning depth writes off for the whole draw, so almost nothing wrote depth and later
+draws covered nearer ones. Now FB_ONLY / RGB_ONLY draws go in two passes (`gpu_vk.c`): the pixels that pass with the
+draw's masks (depth written), then those that fail, colour only (shader fail mode 4). Measured on 31 shots through the
+hangar scene: frame-to-frame brightness changed by up to 32 before, at most 1 now; the GM, the characters and the
+dialogue boxes render as with the software GS. Also: `gpu_vblank_tick` no longer seals a frame after 3 vblanks once
+the game is seen writing DISPFB (only the newest sealed frame is drawn, so a cut picture lost its first part);
+`MSSAGA_PRIMS_BIG=1` lists only primitives 200+ pixels wide.
+
 ## The Windows build (2026-11-25)
 
 `./build-win.sh` (after `./build.sh`; needs `sudo apt install mingw-w64` and `tools/win_deps.sh`, which fetches SDL3

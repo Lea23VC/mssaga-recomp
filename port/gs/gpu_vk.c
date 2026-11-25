@@ -303,12 +303,31 @@ static void blend_state(u32 al, SDL_GPUColorTargetBlendState *b) {
 static int debug_flags = -1;   /* MSSAGA_GPU_DEBUG: 1 no depth test, 2 no blending */
 
 /* The alpha test's fail mode as write masks. A test that always fails (ATST NEVER) is exact: the
- * shader is told not to test and the masks do what the fail mode says. For the other methods the
- * shader discards on KEEP / ZB_ONLY, and FB_ONLY / RGB_ONLY give up depth writes for the draw. */
-static void atest_masks(const GpuDraw *d, u32 *wmask, int *zwrite, int *shader_test) {
+ * shader is told not to test and the masks do what the fail mode says. KEEP and ZB_ONLY: the shader discards
+ * the pixels that fail (ZB_ONLY approximated).
+ * MS Saga: FB_ONLY and RGB_ONLY are drawn in two passes (afail_pass, set by the draw loop): 1 the pixels that pass,
+ * with the draw's own masks (depth written), 2 the pixels that fail (shader fail mode 4: discard those that pass),
+ * colour (RGB) only. Before, the whole draw gave up depth writes: RenderWare draws nearly everything with
+ * FB_ONLY, so almost nothing wrote depth and later draws covered nearer ones (models gone, background in front). */
+static int afail_pass;
+
+static int two_pass(const GpuDraw *d) {
+    return d->atest[0] && d->atest[1] != 0 && d->atest[1] != 1 && (d->atest[3] == 1 || d->atest[3] == 3);
+}
+
+static void atest_masks(const GpuDraw *d, u32 *wmask, int *zwrite, int *shader_test, int *fail_mode) {
     *shader_test = d->atest[0];
+    *fail_mode = (int)d->atest[3];
     if (!d->atest[0] || d->atest[1] == 1) { *shader_test = 0; return; }        /* off, or ALWAYS */
     int never = d->atest[1] == 0;
+    if (two_pass(d)) {
+        if (afail_pass == 2) {                                                 /* the failing pixels */
+            *zwrite = 0;
+            if (d->atest[3] == 3) *wmask &= 7;
+            *fail_mode = 4;
+        } else *fail_mode = 0;                                                 /* the passing pixels */
+        return;
+    }
     switch (d->atest[3]) {
     case 0: break;                                                             /* KEEP */
     case 1: *zwrite = 0; if (never) *shader_test = 0; break;                   /* FB_ONLY */
@@ -324,8 +343,8 @@ static SDL_GPUGraphicsPipeline *pipe_for(const GpuDraw *d) {
     if ((d->fbmsk & 0x0000FF00) == 0x0000FF00) wmask &= ~2u;
     if ((d->fbmsk & 0x00FF0000) == 0x00FF0000) wmask &= ~4u;
     if ((d->fbmsk & 0xFF000000) == 0xFF000000 || d->fpsm == 1) wmask &= ~8u;
-    int zwrite = d->zwrite, shader_test;
-    atest_masks(d, &wmask, &zwrite, &shader_test);
+    int zwrite = d->zwrite, shader_test, fail_mode;
+    atest_masks(d, &wmask, &zwrite, &shader_test, &fail_mode);
     u64 key = (d->abe ? (d->alpha & 0xFF) | 0x100 : 0) | (u64)d->ztst << 9 | (u64)zwrite << 12 | (u64)wmask << 13;
     for (int i = 0; i < npipes; i++)
         if (pipes[i].key == key) return pipes[i].p;
@@ -789,12 +808,12 @@ static void draw_bind(Replay *r, const GpuDraw *d, SDL_GPUTexture *tex, float ac
     float fix = (float)((d->alpha >> 32) & 0xFF) / 128.0f;
     if (fix != r->fix) { SDL_FColor bc = {fix, fix, fix, fix}; SDL_SetGPUBlendConstants(r->rp, bc); r->fix = fix; }
     u32 wm = 0xF;
-    int zw = d->zwrite, st;
-    atest_masks(d, &wm, &zw, &st);
+    int zw = d->zwrite, st, fm;
+    atest_masks(d, &wm, &zw, &st, &fm);
     float tw = (float)d->tw, th = (float)d->th, ntw = across, nth = d->tex < -1 && d->textured ? across : th;
     if (d->nw) { ntw = (float)d->nw; nth = (float)d->nh; }
     DrawUniforms u = {{(s32)d->textured, (s32)d->tfx, (s32)d->tcc, (s32)d->fst},
-                      {st, (s32)d->atest[1], (s32)d->atest[2], (s32)d->atest[3]},
+                      {st, (s32)d->atest[1], (s32)d->atest[2], (s32)fm},
                       {tw, th, 1.0f / ntw, 1.0f / nth},
                       {d->region[0], d->region[1], d->region[2], d->region[3]},
                       {(float)d->nx, (float)d->ny, 0, 0}};
@@ -860,8 +879,18 @@ void gpu_render(GpuFrame *f, const GpuVertex *verts) {
         float across;
         SDL_GPUTexture *tex = draw_texture(&r, d, color, &across);
         if (!r.rp || d->fbp != r.fbp || d->zbp != r.zbp) pass_begin(&r, d, color, depth);
-        draw_bind(&r, d, tex, across);
-        SDL_DrawGPUPrimitives(r.rp, d->count, 1, d->first, 0);
+        if (two_pass(d)) {                         /* MS Saga: FB_ONLY / RGB_ONLY, see atest_masks */
+            afail_pass = 1;
+            draw_bind(&r, d, tex, across);
+            SDL_DrawGPUPrimitives(r.rp, d->count, 1, d->first, 0);
+            afail_pass = 2;
+            draw_bind(&r, d, tex, across);
+            SDL_DrawGPUPrimitives(r.rp, d->count, 1, d->first, 0);
+            afail_pass = 0;
+        } else {
+            draw_bind(&r, d, tex, across);
+            SDL_DrawGPUPrimitives(r.rp, d->count, 1, d->first, 0);
+        }
         if (color == r.copy_src) r.copy_dirty = rect_union(r.copy_dirty, drawn_rect(d, r.vs, r.wide_3d));
     }
     pass_end(&r);

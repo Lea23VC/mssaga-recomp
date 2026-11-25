@@ -49,6 +49,8 @@ void main() {
         // fail modes: 0 KEEP (nothing), 1 FB_ONLY (colour, set up as no depth write), 2 ZB_ONLY
         // (depth only: approximated as nothing unless the test always fails, see gpu_vk.c), 3 RGB_ONLY
         if (!pass && (atest.w == 0 || atest.w == 2)) discard;
+        // MS Saga: 4 = the second pass of FB_ONLY / RGB_ONLY (gpu_vk.c): only the pixels that fail are drawn
+        if (pass && atest.w == 4) discard;
     }
     // the target stores alpha so that 0x80 is 1.0 (blend factors use it as-is)
     out_color = vec4(c.rgb / 255.0, c.a / 128.0);
