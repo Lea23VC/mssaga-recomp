@@ -18,8 +18,9 @@
   `MSSAGA_FRAME_LOG`, ~30,000-40,000 primitives per frame on average, up to ~72,000); the software GS
   (`MSSAGA_GS=sw`) keeps up with it (screenshots on time), llvmpipe doesn't. **Under WSL use `MSSAGA_GS=sw`**; real GPU speed needs a native Windows build.
 - Further: the game goes on to the first in-game scene (a walkway, dialogue "Tristan: Yeah... The G System's really
-  something..."). Suspicion: Tristan's close-up shows mostly big pink shapes (her hair): skinned models
-  (RenderWare skin2) may be drawn with wrong matrices. To look at next.
+  something..."). A suspicion that skinned models (Tristan's close-up: "big pink shapes") were wrong was not
+  reproduced with `MSSAGA_GS=sw`: the cutscene, the bridge walk, the close-up and the mobile suit in the hangar all
+  render correctly (vblanks 5000-8900 of the NEW GAME script). Likely a partial frame while llvmpipe dropped frames.
 - Tools: a watchdog in the vblank timer (no vblank for 5 s: the stuck thread's registers and stack;
   `MSSAGA_WATCHDOG=0` off), `MSSAGA_FIFO_LOG=1` (VIF1 FIFO writes, MSKPATH3), chain sizes in `MSSAGA_DMA_LOG`,
   `tools/sheet.py` (screenshots side by side). SDL no longer swallows SIGTERM/SIGINT, so `timeout` stops a run.
