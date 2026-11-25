@@ -197,42 +197,141 @@ static void hud_update(void);
 
 /* Headless: save the picture at each vertical blank listed (ascending), then exit. */
 /* GPU renderer, headless: take the frames sealed since the last call, show the newest */
+static u64 ip_draws, ip_paired, ip_verts, ip_vpaired, ip_far, ip_frames;   /* MSSAGA_INTERP_LOG: how much pairs */
+
+static GpuVertex *interpolate(const GpuFrame *a, const GpuFrame *b, float t);
+
 static void gpu_vblank(void) {
     if (!gpu_on) return;
-    static GpuFrame *last;
+    static GpuFrame *last, *prev;
     gpu_vblank_tick();
     GpuFrame *f;
+    static int ilog = -1;
+    if (ilog < 0) ilog = getenv("MSSAGA_INTERP_LOG") != NULL;
     while ((f = gpu_next_frame())) {
         gpu_upload(f);
-        gpu_release_frame(last);
+        if (ilog && last) {
+            interpolate(last, f, 0.5f);
+            if (ip_frames % 30 == 0) {
+                rt_log("interp", "last 30 frames: %llu%% of draws paired (%llu of %llu a frame), %llu%% of vertices, %llu cut",
+                       (unsigned long long)(ip_draws ? ip_paired * 100 / ip_draws : 0), (unsigned long long)ip_paired / 30,
+                       (unsigned long long)ip_draws / 30, (unsigned long long)(ip_verts ? ip_vpaired * 100 / ip_verts : 0),
+                       (unsigned long long)ip_far);
+                ip_draws = ip_paired = ip_verts = ip_vpaired = ip_far = 0;
+            }
+        }
+        gpu_release_frame(prev);
+        prev = last;
         last = f;
     }
-    if (last) gpu_render(last, NULL);
+    /* MSSAGA_INTERP_SHOT=1: the picture is the one halfway from the frame before (to see blending's flaws) */
+    static int ishot = -1;
+    if (ishot < 0) ishot = getenv("MSSAGA_INTERP_SHOT") != NULL;
+    if (last) gpu_render(last, ishot && prev ? interpolate(prev, last, 0.5f) : NULL);
 }
 
 /* Frames shown between the game's: each draw found in both the previous frame (a) and the newest
  * (b), with the same vertices and target, gets its positions moved a fraction t of the way from a
  * to b (colours and texture coordinates are b's); draws that differ, or move too far (a cut), are
  * b's. Returns the vertices to draw b with. */
+static int same_draw(const GpuDraw *da, const GpuDraw *db) {
+    return da->count == db->count && da->textured == db->textured && da->tex == db->tex && da->flat2d == db->flat2d;
+}
+
 static GpuVertex *interpolate(const GpuFrame *a, const GpuFrame *b, float t) {
     static GpuVertex *out;
     static u32 cap;
     if (b->nverts > cap) { cap = b->nverts * 2; out = realloc(out, cap * sizeof *out); }
     memcpy(out, b->verts, b->nverts * sizeof *out);
-    for (u32 i = 0; i < b->ndraws && i < a->ndraws; i++) {
-        const GpuDraw *db = &b->draws[i], *da = &a->draws[i];
-        if (da->count != db->count || da->fbp != db->fbp || da->textured != db->textured || (da->tex < -1) != (db->tex < -1))
+    ip_frames++;
+    ip_draws += b->ndraws;
+    ip_verts += b->nverts;
+    /* MS Saga: draws are paired in order, but a draw of b with no partner in a (an object come into view, or
+       gone) no longer shifts every later pair: the next draw of a like it, up to LOOK draws ahead, is its
+       partner. The target buffer is not compared: the game draws its frames into two buffers in turn. */
+    enum { LOOK = 24, GW = 16, GH = 14 };
+    static float fx[GH][GW], fy[GH][GW], fw[GH][GW];   /* motion b - a by screen area, from the pairs */
+    static u32 *lone;                                   /* unpaired 3D draws of b */
+    static u32 lone_cap;
+    u32 nlone = 0;
+    if (b->ndraws > lone_cap) { lone_cap = b->ndraws * 2; lone = realloc(lone, lone_cap * sizeof *lone); }
+    memset(fx, 0, sizeof fx);
+    memset(fy, 0, sizeof fy);
+    memset(fw, 0, sizeof fw);
+    u32 j = 0;
+    for (u32 i = 0; i < b->ndraws && j < a->ndraws; i++) {
+        const GpuDraw *db = &b->draws[i];
+        u32 m = j, end = j + LOOK < a->ndraws ? j + LOOK : a->ndraws;
+        while (m < end && !same_draw(&a->draws[m], db)) m++;
+        if (m == end) {                             /* new in b: shown as it is */
+            if (getenv("MSSAGA_INTERP_LOG")) {      /* why: the same texture nearby, other vertex counts? */
+                static u64 lone, other_count, lone_v, oc_v;
+                lone++;
+                lone_v += db->count;
+                for (u32 q = j; q < end; q++)
+                    if (a->draws[q].tex == db->tex && a->draws[q].count != db->count) { other_count++; oc_v += db->count; break; }
+                if (lone % 2000 == 0)
+                    rt_log("interp", "unpaired draws: %llu%% have the same texture nearby with another vertex count (%llu%% of their vertices)",
+                           (unsigned long long)(other_count * 100 / lone), (unsigned long long)(oc_v * 100 / (lone_v ? lone_v : 1)));
+            }
+            if (!db->flat2d) lone[nlone++] = i;
             continue;
+        }
+        j = m + 1;
+        const GpuDraw *da = &a->draws[m];
         const GpuVertex *va = &a->verts[da->first], *vb = &b->verts[db->first];
-        int far = 0;
+        /* a real partner moves as one: every vertex about as the draw's mean (an unrelated draw, or the same
+           one with its triangles in another order, doesn't); and not far (a cut) */
+        float mx = 0, my = 0;
+        for (u32 k = 0; k < db->count; k++) { mx += vb[k].x - va[k].x; my += vb[k].y - va[k].y; }
+        mx /= (float)db->count;
+        my /= (float)db->count;
+        int far = fabsf(mx) > 40.0f || fabsf(my) > 40.0f;
         for (u32 k = 0; k < db->count && !far; k++)
-            far = fabsf(vb[k].x - va[k].x) > 80.0f || fabsf(vb[k].y - va[k].y) > 80.0f;
-        if (far) continue;
+            far = fabsf(vb[k].x - va[k].x - mx) > 6.0f || fabsf(vb[k].y - va[k].y - my) > 6.0f;
+        if (far) { ip_far++; if (!db->flat2d) lone[nlone++] = i; continue; }
+        if (!db->flat2d)
+            for (u32 k = 0; k < db->count; k++) {
+                int gx = (int)(vb[k].x * GW / 512.0f), gy = (int)(vb[k].y * GH / 448.0f);
+                if (gx < 0 || gy < 0 || gx >= GW || gy >= GH) continue;
+                fx[gy][gx] += vb[k].x - va[k].x;
+                fy[gy][gx] += vb[k].y - va[k].y;
+                fw[gy][gx] += 1.0f;
+            }
+        ip_paired++;
+        ip_vpaired += db->count;
         GpuVertex *o = &out[db->first];
         for (u32 k = 0; k < db->count; k++) {
             o[k].x = va[k].x + (vb[k].x - va[k].x) * t;
             o[k].y = va[k].y + (vb[k].y - va[k].y) * t;
             o[k].z = va[k].z + (vb[k].z - va[k].z) * t;
+        }
+    }
+    /* the unpaired 3D (ground and walls cut at the screen's edge into other triangles each frame, objects come
+       into view): moved back by the motion around them, so that they stay with their neighbours. Areas with no
+       pair take the mean of all. */
+    float tx = 0, ty = 0, tw = 0;
+    for (int y = 0; y < GH; y++)
+        for (int x = 0; x < GW; x++) { tx += fx[y][x]; ty += fy[y][x]; tw += fw[y][x]; }
+    if (tw > 0 && nlone) {
+        tx /= tw;
+        ty /= tw;
+        for (u32 n = 0; n < nlone; n++) {
+            const GpuDraw *db = &b->draws[lone[n]];
+            const GpuVertex *vb = &b->verts[db->first];
+            GpuVertex *o = &out[db->first];
+            for (u32 k = 0; k < db->count; k++) {
+                int gx = (int)(vb[k].x * GW / 512.0f), gy = (int)(vb[k].y * GH / 448.0f);
+                gx = gx < 0 ? 0 : gx >= GW ? GW - 1 : gx;
+                gy = gy < 0 ? 0 : gy >= GH ? GH - 1 : gy;
+                float dx = tx, dy = ty, w = 0, sx = 0, sy = 0;
+                for (int yy = gy - 1; yy <= gy + 1; yy++)       /* this area and the ones around it */
+                    for (int xx = gx - 1; xx <= gx + 1; xx++)
+                        if (yy >= 0 && xx >= 0 && yy < GH && xx < GW) { sx += fx[yy][xx]; sy += fy[yy][xx]; w += fw[yy][xx]; }
+                if (w > 0) { dx = sx / w; dy = sy / w; }
+                o[k].x = vb[k].x - dx * (1.0f - t);
+                o[k].y = vb[k].y - dy * (1.0f - t);
+            }
         }
     }
     return out;
@@ -481,11 +580,11 @@ static void overlay_update(void) {
 
 /* Window with the GPU renderer: as fast as possible (or as often as the screen takes pictures
  * with vsync: MSSAGA_VSYNC=1 or F4), show the game's newest frame, moved part of the way from the one before
- * it by the time since it came (MSSAGA_INTERP=0: the newest frame as it is). */
+ * it by the time since it came: MSSAGA_INTERP=1; MS Saga: off by default, it still shows artifacts while moving). */
 static int display_window_gpu(void) {
     SDL_Window *win = win_create();
     if (!win || gpu_init(win)) return -1;
-    int interp = !(getenv("MSSAGA_INTERP") && !atoi(getenv("MSSAGA_INTERP")));
+    int interp = getenv("MSSAGA_INTERP") && atoi(getenv("MSSAGA_INTERP"));   /* MS Saga: off unless asked (artifacts) */
     GpuFrame *fa = NULL, *fb = NULL;    /* the frame before, the newest */
     u64 tb = 0, period = 20000000;      /* when the newest came; time between frames (ns) */
     u32 last_vb = 0;

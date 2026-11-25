@@ -20,6 +20,17 @@ the battle theme (ADX, the same voice as the field music) didn't start. So most 
 60 fps would mean keeping the logic at 30 and making the frames in between (interpolating cameras and objects), a
 big job. Default stays 30; `MSSAGA_FPS=60` is kept as the experiment's switch.
 
+Frames in between (display.c `interpolate`, from the reference: the window shows the newest frame moved part of the
+way from the one before) never worked here: it paired draws only with the same target, and the game draws its frames
+into two buffers in turn (0% paired). Fixed and measured (`MSSAGA_INTERP_LOG=1`, headless): 99% of draws pair when
+still, 71-86% while walking; most of the rest are ground and walls cut at the screen's edge into other triangles each
+frame (same texture, other vertex count). Added: pairing with look-ahead (a draw come or gone doesn't shift the rest),
+a pair must move as one (no vertex more than 6 px off the draw's mean, no jump over 40 px), and unpaired 3D moves
+with the motion of the pairs around it (a 16x14 grid). Still frames came out clean (`MSSAGA_INTERP_SHOT=1` with
+`--shot`), but played live it still looked broken. Parked: off by default, `MSSAGA_INTERP=1` turns it on. Next
+attempt, if any: record a walk and a battle (`MSSAGA_GSREC`) and study long blended sequences offline; or the
+engine route (render twice per game step with blended matrices), much bigger.
+
 ## Widescreen 16:9 (2026-11-25)
 
 `port/hle/widescreen.c` replaces RenderWare's `RwCameraSetViewWindow` (0x1B8B58): with 16:9 on, the view window's
