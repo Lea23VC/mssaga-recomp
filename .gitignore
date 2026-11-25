@@ -1,0 +1,24 @@
+# Game data: never commit
+disc/*
+!disc/README.md
+*.iso
+*.ISO
+*.AFS
+*.afs
+*.IRX
+*.irx
+*.IMG
+SLUS_*
+SLPS_*
+*.ppm
+ram_*.bin
+vram_*
+
+# Generated / local
+asm/
+assets/
+build/
+.venv/
+reference/
+__pycache__/
+*.o
