@@ -157,6 +157,7 @@ static void voice_flush(Voice *v) {
 #ifdef MSSAGA_SDL3
 
 void iop_lle_audio(float *out, int frames);   /* lle/iop_lib.c */
+void movie_audio(float *out, int frames);     /* port/hle/movie.c */
 
 static void mix(float *out, int frames) {
     memset(out, 0, (size_t)frames * 2 * sizeof *out);
@@ -191,6 +192,7 @@ static void mix(float *out, int frames) {
     }
     pthread_mutex_unlock(&alock);
     iop_lle_audio(out, frames);                     /* the sound driver's SPU2 (port/iop/lle) */
+    movie_audio(out, frames);                       /* a movie's sound (port/hle/movie.c) */
     for (int i = 0; i < frames * 2; i++) out[i] = out[i] > 1.0f ? 1.0f : out[i] < -1.0f ? -1.0f : out[i];
 }
 

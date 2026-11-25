@@ -1,5 +1,14 @@
 # Status
 
+## Movies with FFmpeg (2026-11-25)
+
+The two Sofdec movies are AFS entries 25753 `gto_op.sfd` (the opening, 122.6 s) and 25754 `conp.sfd`: MPEG-2
+512x448 at 29.97 fps, ADX stereo 48 kHz. `port/hle/movie.c` (player from the reference) replaces MOVIE_PlayStart /
+GetStat / Stop / StopAll: the AFS entry is decoded by FFmpeg on a thread of its own, its pictures shown instead of the
+game's, its sound mixed in; the slot says 1 while playing and 3 at the end, START skips. Tested after NEW GAME: the
+movie plays with sound, START skips to the prologue, and left alone it ends at 122.6 s and the prologue follows.
+`build.sh` uses FFmpeg when pkg-config finds it; `build-win.sh` doesn't yet (movies skipped there).
+
 ## First battle, first save (2026-11-25)
 
 Played on CachyOS (by hand): NEW GAME → the hangar → down the hallway on the left → the first battle (DLL `sento`,

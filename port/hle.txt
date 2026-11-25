@@ -48,5 +48,8 @@
 # SDK: write text to the Deci2 TTY (debug console): to stderr (port/hle/tty.c). The game's printf ends here.
 0x0027A4B0 hle_tty_write
 
-# Movies (Sofdec): skipped, they need the IPU (port/hle/movie.c)
+# Movies (Sofdec): played with FFmpeg instead of the IPU (port/hle/movie.c)
 0x001283F8 hle_MOVIE_PlayStart
+0x00128E78 hle_MOVIE_GetStat
+0x00128DC8 hle_MOVIE_Stop
+0x00128E10 hle_MOVIE_StopAll

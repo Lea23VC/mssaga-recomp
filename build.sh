@@ -66,6 +66,15 @@ $PY -I tools/spv2h.py build/shaders/shaders.h build/shaders/*.spv
 SDL_CFLAGS=$(pkg-config --cflags sdl3) SDL_LIBS=$(pkg-config --libs sdl3) || { echo "SDL3 not found (pkg-config sdl3)"; exit 1; }
 PORT_CFLAGS="-O2 -g -Wall -Wextra -Wno-unused-parameter -fno-strict-aliasing -ffp-contract=off -march=x86-64-v2 -D_FILE_OFFSET_BITS=64 -DMSSAGA_SDL3"   # MSSAGA_SDL3: sound through SDL (port/iop/cri_adxi.c)
 PORT_INC="-Iport/runtime -Iport/kernel -Iport/iop -Iport/gs -Ibuild/shaders $SDL_CFLAGS"
+# FFmpeg plays the movies (port/hle/movie.c); without it they are skipped
+FF_PKGS="libavformat libavcodec libavutil libswscale libswresample"
+if pkg-config --exists $FF_PKGS; then
+    PORT_CFLAGS="$PORT_CFLAGS -DMSSAGA_FFMPEG"
+    PORT_INC="$PORT_INC $(pkg-config --cflags $FF_PKGS)"
+    SDL_LIBS="$SDL_LIBS $(pkg-config --libs $FF_PKGS)"
+else
+    echo "FFmpeg ($FF_PKGS) not found: the movies are skipped"
+fi
 rm -rf build/port && mkdir -p build/port
 for src in port/*.c port/runtime/*.c port/kernel/*.c port/iop/*.c port/hle/*.c port/gs/*.c port/iop/lle/*.c; do
     echo "$src"
