@@ -1,5 +1,37 @@
 # Status
 
+## Milestone 4 — the title screen, and the menus answer (2026-11-24)
+
+The reference's renderer is in (`port/gs/`: DMAC → VIF → VU1 (interpreter + run-time JIT) → GS, software or
+Vulkan through SDL3's GPU API, `port/iop/pad.c` for keyboard/gamepad). With it the game shows the memory card check,
+the Sofdec/ADX logos, the **title screen** ("PRESS ANY BUTTON"), the **LOAD GAME / NEW GAME** menu after START, and
+the memory card slot screen after CROSS: all at full speed (1,500 vertical blanks in 25.8 s, WSLg, Vulkan scale 2).
+
+    ./build/mssaga                                    a window (keys below; F1 size, F3 hides the panel)
+    ./build/mssaga --shot 1500                        build/shot_1500.ppm, no window (tools/ppm2png.py)
+    ./build/mssaga --press "1600:START,1900:CROSS" --shot 1750,2100
+    MSSAGA_GS=sw ...                                  software GS instead of Vulkan
+
+Keys: arrows, Z = cross, X = circle, A = square, S = triangle, Q/W = L1/R1, E/R = L2/R2, Enter = start,
+Backspace = select (or a gamepad).
+
+What MS Saga needed on top of the reference:
+- **RenderWare's DMA scheduler** (`func_001C4B18`, the DMA-end handler) writes VIF codes straight into the VIF1 FIFO
+  (0x10005000: STCYCL/STMASK/STMOD at start, MSKPATH3 before an upload) and waits for `GIF_STAT.M3P`. Now: FIFO
+  writes go to VIF1 after the queued work (`dmac_vif1_fifo`), MSKPATH3 sets the mask, `GIF_STAT` bit 1 reports it.
+  Before this the title DLL stopped in `_rwDMAWaitQueue` after its first frame.
+- **`bc0f`** (CPCOND0): `D_PCR` is kept now and `rt_cpcond0` answers from `D_PCR` & `D_STAT` (`port/gs/dmac.c`).
+- **`sceTtyWrite`** blocked on the IOP every time the game `printf`s (the memory card screen does each frame):
+  replaced (`port/hle/tty.c`), so the game's debug output goes to stderr (`SECTOR_SIZE 94`, `FREE = 8000`).
+- Link with `-rdynamic` (the VU1 programs compiled at run time call into the executable). Shaders are compiled with
+  `glslangValidator -V` (no `glslc` on Ubuntu 22.04). The VU JIT's ahead-of-time pass is off: our VU1 programs are
+  spread over `.data`, not one block like Saint Seiya's.
+- Saint Seiya's hooks the renderer calls (training mode, widescreen, font, movie) are stubs in `port/stubs.c`.
+- Debugging: `MSSAGA_DMA_LOG=1` logs every DMA transfer.
+
+Next: NEW GAME (the field/battle DLLs and 3D), the opening movie (Sofdec), sound (milestone 6: SDL3 is there now;
+`cri_adxi.c` is still built without it, and `RPGSND` is a stub).
+
 ## Where it stops now: RenderWare waits for its DMA (2026-11-24)
 
 With the DLLs running, the title DLL draws its first frames, then the main thread spins forever in RenderWare's

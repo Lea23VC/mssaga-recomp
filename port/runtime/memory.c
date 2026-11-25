@@ -49,7 +49,10 @@ u32 rt_mmio_read(Ctx *c, u32 a, int size) {
      * (VIF1_STAT: FQC 24-28; GIF_STAT: OPH 9, APATH 10-11, FQC 24-28) */
     if (p_ == 0x10003800) return 0;
     if (p_ == 0x10003C00) return dmac_gs_busy() ? 0x1F000000u : 0;
-    if (p_ == 0x10003020) return dmac_gs_busy() ? 0x1F000E00u : 0;
+    if (p_ == 0x10003020) {               /* GIF_STAT; MS Saga: + M3P (bit 1), path 3 masked by VIF1 MSKPATH3 */
+        extern volatile int gif_path3_masked;
+        return (dmac_gs_busy() ? 0x1F000E00u : 0) | (gif_path3_masked ? 2u : 0);
+    }
     /* registers whose reads must not just echo the last write */
     if (p_ == 0x12001000) {               /* GS CSR: report VSync/FINISH events as happened */
         return 0x0000000C | (kernel_vblank_count() & 1 ? 0x2000 : 0);
@@ -60,7 +63,16 @@ u32 rt_mmio_read(Ctx *c, u32 a, int size) {
     return v;
 }
 
+void dmac_vif1_fifo(const u8 *qw);     /* gs/dmac.c */
+
 void rt_mmio_write(Ctx *c, u32 a, int size, u64 value) {
+    /* MS Saga: the VIF1 FIFO written by the EE itself (RenderWare): two 64-bit halves make a quadword */
+    if ((a & 0x1FFFFFF0) == 0x10005000 && size == 8) {
+        static u8 qw[16];
+        memcpy(qw + (a & 8), &value, 8);
+        if (a & 8) dmac_vif1_fifo(qw);
+        return;
+    }
     u8 *seen;
     u8 *p = io_slot(a, &seen);
     if (!p) rt_fatal(c, "write%d to unmapped address %08X", size * 8, a);
@@ -78,6 +90,7 @@ void rt_mmio_read128(Ctx *c, u32 a, GPR *out) {
 }
 
 void rt_mmio_write128(Ctx *c, u32 a, const GPR *v) {
+    if ((a & 0x1FFFFFF0) == 0x10005000) { dmac_vif1_fifo((const u8 *)v); return; }   /* MS Saga: VIF1 FIFO */
     /* 0x10004000 / 0x10005000: VIF0/VIF1 FIFOs, 0x10006000: GIF FIFO, 0x10007010: IPU in FIFO */
     rt_mmio_write(c, a, 8, v->d[0]);
     rt_mmio_write(c, a + 8, 8, v->d[1]);

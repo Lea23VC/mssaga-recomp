@@ -44,3 +44,6 @@
 0x0025AC70 hle_sceMcRename
 0x0025ADD0 hle_sceMcUnformat
 0x0025AEA0 hle_sceMcGetEntSpace
+
+# SDK: write text to the Deci2 TTY (debug console): to stderr (port/hle/tty.c). The game's printf ends here.
+0x0027A4B0 hle_tty_write

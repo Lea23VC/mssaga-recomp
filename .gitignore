@@ -24,3 +24,6 @@ build/
 reference/
 __pycache__/
 *.o
+
+# translated code (generated into build/): never commit it from anywhere
+rc_[0-9][0-9][0-9].c

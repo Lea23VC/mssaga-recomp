@@ -55,12 +55,22 @@ ls build/dll/c/*.c | xargs -P"$(nproc)" -I{} sh -c \
     'o=build/dll/obj/$(basename {} .c).o; gcc -c '"$CFLAGS"' -Ibuild/dll/c {} -o $o || { echo "FAILED: {}"; exit 255; }'
 echo "compiled $(ls build/dll/obj/*.o | wc -l) DLL files into build/dll/obj/"
 
-# the port: runtime, kernel, IOP services (warnings on), linked with the translated code -> build/mssaga
-PORT_CFLAGS="-O2 -g -Wall -Wextra -Wno-unused-parameter -fno-strict-aliasing -ffp-contract=off -march=x86-64-v2"
-PORT_INC="-Iport/runtime -Iport/kernel -Iport/iop -Iport/gs"
-mkdir -p build/port
-for src in port/*.c port/runtime/*.c port/kernel/*.c port/iop/*.c port/hle/*.c; do
-    gcc -c $PORT_CFLAGS $PORT_INC "$src" -o "build/port/$(echo "$src" | tr / _ | sed 's/\.c$/.o/')"
+# shaders: GLSL -> SPIR-V (glslangValidator: Ubuntu 22.04 has no glslc) -> a header of byte arrays
+mkdir -p build/shaders
+for sh in port/gs/shaders/*.vert port/gs/shaders/*.frag; do
+    glslangValidator -V -o "build/shaders/$(basename "$sh").spv" "$sh" > /dev/null || { echo "FAILED: $sh"; exit 1; }
 done
-gcc -o build/mssaga build/port/*.o build/obj/*.o build/dll/obj/*.o -lpthread -lm
+$PY -I tools/spv2h.py build/shaders/shaders.h build/shaders/*.spv
+
+# the port: runtime, kernel, IOP services, renderer (warnings on), linked with the translated code -> build/mssaga
+SDL_CFLAGS=$(pkg-config --cflags sdl3) SDL_LIBS=$(pkg-config --libs sdl3) || { echo "SDL3 not found (pkg-config sdl3)"; exit 1; }
+PORT_CFLAGS="-O2 -g -Wall -Wextra -Wno-unused-parameter -fno-strict-aliasing -ffp-contract=off -march=x86-64-v2 -D_FILE_OFFSET_BITS=64"
+PORT_INC="-Iport/runtime -Iport/kernel -Iport/iop -Iport/gs -Ibuild/shaders $SDL_CFLAGS"
+rm -rf build/port && mkdir -p build/port
+for src in port/*.c port/runtime/*.c port/kernel/*.c port/iop/*.c port/hle/*.c port/gs/*.c; do
+    echo "$src"
+done | xargs -P"$(nproc)" -I{} sh -c \
+    'gcc -c '"$PORT_CFLAGS $PORT_INC"' {} -o "build/port/$(echo {} | tr / _ | sed "s/\.c$/.o/")" || exit 255'
+# -rdynamic: the VU1 programs compiled at run time (port/gs/vu_jit.c) call the interpreter's functions in here
+gcc -rdynamic -o build/mssaga build/port/*.o build/obj/*.o build/dll/obj/*.o $SDL_LIBS -lpthread -lm -ldl
 echo "linked build/mssaga"

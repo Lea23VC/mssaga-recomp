@@ -61,8 +61,11 @@ Other references worth reading when stuck (not cloned by default):
 
 ## Commands
 
-- `./build.sh`: symbols → splat → `tools/recomp/recomp.py` → gcc, all into `build/` (needs `disc/SLUS_212.70`).
-  Progress and what's next: `docs/status.md`.
+- `./build.sh`: symbols → splat → `tools/recomp/recomp.py` (ELF + the 11 DLLs) → gcc → `build/mssaga`
+  (needs `disc/SLUS_212.70`, `disc/game.iso`, SDL3, Vulkan headers, glslangValidator). ~3 min.
+- `./build/mssaga [--shot N,...] [--press "N:START,..."] [-v|-vv] [--trace]`; `MSSAGA_GS=sw` software GS;
+  `MSSAGA_DUMP_AT=N` shows where a stuck thread is; `MSSAGA_DMA_LOG=1`; `MSSAGA_MEMCARD=dir` (use a copy in tests).
+- Progress and what's next: `docs/status.md`.
 
 ## Environment
 

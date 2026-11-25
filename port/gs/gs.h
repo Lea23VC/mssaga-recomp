@@ -1,10 +1,24 @@
-/* The GS / DMAC side the runtime and kernel call into. Milestone 2: port/stubs.c answers with an idle DMAC
- * and no picture; SaintSeiyaRecomp's port/gs/ (DMAC -> VIF -> VU1 -> GS -> Vulkan) replaces it at milestone 4. */
+/* From SaintSeiyaRecomp port/gs/gs.h (MIT, Copyright (c) 2026 Matheus Nunes Pereira;
+ * licenses/SaintSeiyaRecomp-MIT.txt). Changes for MS Saga are noted where they are. */
+/* The graphics path: DMAC (dmac.c) -> VIF0/VIF1 (vif.c) -> GIF (gif.c) -> GS (gs.c). */
 #pragma once
 #include "r5900.h"
 
-u32 dmac_read(u32 a);
-int dmac_write(Ctx *c, u32 a, u32 v);   /* 1 = handled (not stored as plain memory) */
+/* dmac.c: registers 0x10008000..0x1000EFFF */
+u32 dmac_read(u32 addr);
 int dmac_gs_busy(void);
-void dmac_gs_flip(void);
-void gs_set_crt(u32 interlace, u32 mode, u32 field);
+void dmac_gs_flip(void);      /* DISPFB written: a new picture (seals the GPU frame in order) */       /* VIF1 / GIF transfers still running on their thread */
+int dmac_write(Ctx *c, u32 addr, u32 value);      /* 0 if not a DMAC register */
+
+/* destinations of DMA data */
+void gif_dma(const u8 *data, u32 qwc);
+void vif1_dma(const u8 *data, u32 qwc);
+void vif0_dma(const u8 *data, u32 qwc);
+void vif_tag(int vif, const u8 *two_codes);       /* the upper half of a DMA tag sent with TTE */
+
+/* kernel.c: deliver a DMAC interrupt for channel `ch` at the next safe point */
+void kernel_raise_dmac(int ch);
+
+/* memory.c */
+u64 gs_priv_read(u32 offset);
+void gs_priv_write(u32 offset, u64 value);
