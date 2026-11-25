@@ -19,5 +19,9 @@ bsdtar -xf disc/game.iso -C disc SLUS_212.70 SYSTEM.CNF
 ./build/mssaga    # a window; --shot 1500 saves build/shot_1500.ppm instead
 ```
 
+Windows: after `./build.sh`, run `sudo apt install mingw-w64`, `tools/win_deps.sh` and `./build-win.sh`, then
+`build-win\mssaga.bat` from Windows (edit the ISO path in it). The GPU renderer is only fast there: under WSL,
+Vulkan is llvmpipe (on the CPU), so use `MSSAGA_GS=sw ./build/mssaga` in WSL.
+
 Needs: gcc, python3-venv, SDL3 (Ubuntu 22.04: build it from source), `libvulkan-dev`, `glslang-tools`,
 `pkg-config`. Keys: arrows, Z/X/A/S = cross/circle/square/triangle, Q/W/E/R = L1/R1/L2/R2, Enter = start.

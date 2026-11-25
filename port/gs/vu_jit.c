@@ -66,13 +66,15 @@ typedef int (*ProgFn)(Vu *v);
 /* The programs built into the executable (generated/vu/vu_builtin.c, sorted by key), weak: the first
  * stage of the build, which writes them, has none. */
 typedef struct { u64 key; ProgFn fn; } VuBuiltin;
-extern const VuBuiltin vu_builtin[] __attribute__((weak));
-extern const int vu_builtin_count __attribute__((weak));
-extern const u64 vu_builtin_header_hash __attribute__((weak));
+/* MS Saga: no programs are built in yet (the build doesn't write generated/vu), so the table is defined here, empty:
+ * Windows (PE/COFF) can't link the reference's weak, undefined declarations. */
+static const VuBuiltin vu_builtin[1];
+static const int vu_builtin_count = 0;
+static const u64 vu_builtin_header_hash = 0;
 static int can_compile;         /* the sources (and so gcc) for programs not built in */
 
 static ProgFn builtin(u64 key) {
-    if (!&vu_builtin_count || !vu_builtin_count) return NULL;
+    if (!vu_builtin_count) return NULL;
     int lo = 0, hi = vu_builtin_count - 1;
     while (lo <= hi) {
         int mid = (lo + hi) / 2;
@@ -913,7 +915,7 @@ static void load(Prog *p, const char *so) { (void)so; __atomic_store_n(&p->state
 static int setup(void) {
     const char *e = getenv("MSSAGA_VUJIT");
     if (e && !atoi(e)) return 0;
-    if (!&vu_builtin_count || !vu_builtin_count) return 0;
+    if (!vu_builtin_count) return 0;
     header_hash = vu_builtin_header_hash;
     rt_log("vujit", "%d VU1 programs built in", vu_builtin_count);
     return 1;
@@ -1028,7 +1030,7 @@ static int setup(void) {
     snprintf(src_dir, sizeof src_dir, "%s", exe);
     char probe[PATH_MAX + 64];
     snprintf(probe, sizeof probe, "%s/port/gs/vu_internal.h", src_dir);
-    int built_in = &vu_builtin_count && vu_builtin_count > 0;
+    int built_in = vu_builtin_count > 0;
     if (access(probe, R_OK) != 0) {
         if (!built_in) { rt_log("vujit", "sources not found (%s): VU1 programs are interpreted", probe); return 0; }
         header_hash = vu_builtin_header_hash;

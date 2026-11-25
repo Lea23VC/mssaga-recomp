@@ -27,3 +27,7 @@ __pycache__/
 
 # translated code (generated into build/): never commit it from anywhere
 rc_[0-9][0-9][0-9].c
+
+# Windows build: SDL3 and friends downloaded by tools/win_deps.sh, and the build
+tools/win/
+build-win/

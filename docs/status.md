@@ -1,5 +1,27 @@
 # Status
 
+## The Windows build (2026-11-25)
+
+`./build-win.sh` (after `./build.sh`; needs `sudo apt install mingw-w64` and `tools/win_deps.sh`, which fetches SDL3
+3.2.30 for MinGW into `tools/win/`) cross-compiles the same generated C and the port into `build-win/mssaga.exe`,
+with `SDL3.dll`, a copy of `SLUS_212.70` and `mssaga.bat` (it passes the ISO's Windows path). It is a console program
+for now, so the log shows. From WSL it also runs through interop (`cd build-win && ./mssaga.exe --iso 'G:\...' --shot N`).
+
+Measured on the NEW GAME script (frames after vblank 3626, `MSSAGA_FRAME_LOG`):
+
+| | ms/frame | VU1 | GS | screenshots |
+|---|---|---|---|---|
+| WSL, Vulkan = llvmpipe | 33.4 | 5.7 (JIT) | 3.3 | late by 700+ vblanks: llvmpipe can't keep up |
+| WSL, `MSSAGA_GS=sw` | 33.4 | | | on time |
+| Windows, Vulkan on the GPU | 41.9 | 35.7 (interpreted) | 3.2 | on time |
+
+The GPU keeps up on Windows. The game is slower there because VU1 programs are only interpreted: the run-time JIT
+needs gcc on the machine. **Next: build the VU1 programs into the executable** (the reference's `vu_jit_generate`,
+adapted: our ~90 programs are spread over `.data`, see recon.md). Changes for Windows: memcard.c without fnmatch and
+localtime_r; the reference's weak, undefined `vu_builtin*` table (PE/COFF can't link it) is an empty table for now.
+
+The first dialogue now shows too ("Fritz: So this is a Mobile Suit? Wow, that's cool!", ~vblank 11,300 of the script).
+
 ## The logo freeze, and the first 3D scene (2026-11-25)
 
 - **Freeze fixed** (about 1 run in 5 stopped on the Sofdec/ADX logos): RenderWare's DMA handler masks GIF path 3

@@ -17,7 +17,6 @@
  */
 #define _GNU_SOURCE
 #include <dirent.h>
-#include <fnmatch.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -89,7 +88,11 @@ static void host_path(const char *card, char *out, size_t n) {
 
 static void card_time(Ctx *c, u32 a, time_t t) {
     struct tm tm;
+#ifdef _WIN32
+    localtime_s(&tm, &t);
+#else
     localtime_r(&t, &tm);
+#endif
     wr8(c, a, 0);
     wr8(c, a + 1, (u8)tm.tm_sec);
     wr8(c, a + 2, (u8)tm.tm_min);
@@ -254,7 +257,7 @@ void hle_sceMcGetDir(Ctx *c) {
     int n = 0, seen = 0;
     if (d) {
         for (struct dirent *de; (de = readdir(d)) && (u32)n < max;) {
-            if (fnmatch(leaf, de->d_name, 0)) continue;
+            if (!platform_match(leaf, de->d_name)) continue;
             if (seen++ < skip) continue;
             char path[2 * PATH_MAX];
             snprintf(path, sizeof path, "%s/%s", dir, de->d_name);
