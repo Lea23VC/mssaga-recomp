@@ -16,7 +16,10 @@ Nothing from the game is in this repository or in its releases. You need your ow
 - **RecompLauncher:** the release carries a `recomplauncher.json`, so the launcher sets it up from your `.iso`
   and shows the picture, window and V-Sync settings on the game's page.
 - **Command line:** `mssaga --game <your.iso> [--data <folder>] [--widescreen on|off] [--window full|WxH]
-  [--vsync on|off]`. `--data` keeps everything the port writes in one folder.
+  [--vsync on|off] [--discord on|off]`. `--data` keeps everything the port writes in one folder.
+- **Discord:** with the Discord app running, your status shows that you're playing (title screen, exploring, in
+  battle). It's on by default; `--discord off`, or a file named `discord` containing `0` in the settings folder,
+  turns it off.
 - **Keys:** arrows, Z/X/A/S = Cross/Circle/Square/Triangle, Q/W/E/R = L1/R1/L2/R2, Enter = Start,
   Backspace = Select. F1 window size, F2 widescreen, F3 performance panel, F4 V-Sync. A gamepad works as a
   DualShock 2.

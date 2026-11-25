@@ -2,12 +2,12 @@
  * MS Saga: A New Dawn, native: entry point.
  *
  *     mssaga [SLUS_212.70] [--iso game.iso | --game game.iso] [--data dir] [-q | -v | -vv] [--trace]
- *            [--widescreen on|off] [--window full|WxH] [--vsync on|off]
+ *            [--widescreen on|off] [--window full|WxH] [--vsync on|off] [--discord on|off]
  *            [--shot 300,600,...] [--press "1100:CROSS,..."]
  *
  * --data dir: everything the port writes (memory card, settings, the copied executable, log, caches) goes in dir
- * instead of the usual per-user folder (RecompLauncher passes its {data}). --widescreen, --window and --vsync set
- * MSSAGA_WIDESCREEN, MSSAGA_WINDOW and MSSAGA_VSYNC for this run. --game is --iso by its standard name.
+ * instead of the usual per-user folder (RecompLauncher passes its {data}). --widescreen, --window, --vsync and
+ * --discord set MSSAGA_WIDESCREEN, MSSAGA_WINDOW, MSSAGA_VSYNC and MSSAGA_DISCORD for this run. --game is --iso by its standard name.
  *     mssaga --gen-vu dir       (the build) the game's VU1 programs as C into dir, then exit
  *
  * Loads the executable into guest RAM (its code is the recompiled C linked into this program; the image is still
@@ -41,6 +41,7 @@
 #include "runtime.h"
 #include "kernel.h"
 #include "platform.h"
+#include "discord.h"
 
 extern const FuncEntry game_functab[];    /* build/recomp/functab.c */
 extern const int game_functab_count;
@@ -222,10 +223,12 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--trace")) rt_trace_on = 1;
         else if ((!strcmp(argv[i], "--iso") || !strcmp(argv[i], "--game")) && i + 1 < argc) iso = argv[++i];
         else if (!strcmp(argv[i], "--data") && i + 1 < argc) set_env("MSSAGA_DATA", argv[++i]);
-        else if ((!strcmp(argv[i], "--widescreen") || !strcmp(argv[i], "--vsync")) && i + 1 < argc) {
+        else if ((!strcmp(argv[i], "--widescreen") || !strcmp(argv[i], "--vsync") || !strcmp(argv[i], "--discord")) &&
+                 i + 1 < argc) {
             int v = on_off(argv[i + 1]);
             if (v < 0) return fail("%s takes on or off, not %s", argv[i], argv[i + 1]);
-            set_env(argv[i][2] == 'w' ? "MSSAGA_WIDESCREEN" : "MSSAGA_VSYNC", v ? "1" : "0");
+            set_env(argv[i][2] == 'w' ? "MSSAGA_WIDESCREEN" : argv[i][2] == 'v' ? "MSSAGA_VSYNC" : "MSSAGA_DISCORD",
+                    v ? "1" : "0");
             i++;
         }
         else if (!strcmp(argv[i], "--window") && i + 1 < argc) set_env("MSSAGA_WINDOW", argv[++i]);
@@ -280,6 +283,7 @@ int main(int argc, char **argv) {
     pthread_attr_setstacksize(&a, 64 << 20);     /* deep guest call chains run on the host stack */
     pthread_create(&game, &a, game_main, NULL);
     platform_thread_name(game, "game");
+    discord_start(nshots != 0);
     if (nshots) return display_shots(shots, nshots);
     return display_window();
 }

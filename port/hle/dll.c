@@ -14,6 +14,7 @@
 
 #include "r5900.h"
 #include "runtime.h"
+#include "discord.h"
 
 extern const DllModule *const dll_modules[];   /* build/dll/dlls.c */
 extern const int dll_module_count;
@@ -42,6 +43,7 @@ void hle_snDllLoaded(Ctx *c) {
         const DllModule *m = dll_modules[i];
         if (m->size == size && m->crc == crc) {
             rt_dll_register(image, m);
+            discord_note_dll(m->name);
             rt_log("dll", "%s loaded at %08X (%u functions)", m->name, image, m->count);
             return;
         }

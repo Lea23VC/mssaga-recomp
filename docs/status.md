@@ -1,5 +1,19 @@
 # Status
 
+## Discord status (2026-11-25)
+
+`port/runtime/discord.c`: the Discord app's local IPC (unix socket `discord-ipc-N`, Windows named pipe), no library.
+Application ID 1575286990482575430, art assets `title`, `field`, `battle`, `small` uploaded to it. "At the title
+screen" (`title` DLL), "Exploring" (`bmap`/`fmap`/`tmap`), "In battle" (`sento`), with the session's start time.
+On in the window; `--discord off`, `MSSAGA_DISCORD=0` or a `discord` file containing 0 turns it off; headless runs
+only with `MSSAGA_DISCORD=1`. Tested against a stand-in socket server (handshake, title → exploring, ping, reconnect
+after a drop), and seen in the real app on CachyOS ("Exploring" with its pictures). Battle and the Windows pipe
+not tested yet. Discord shows one activity on the profile: another program's status (VS Code's Discord Presence
+extension) can take its place.
+
+The art for Discord / the launcher / the program icon is official game art: kept in `build/art/` (gitignored), never
+committed. `MSSAGA_ICON=file.ico ./build-win.sh` puts another icon in a private build.
+
 ## RecompLauncher support (2026-11-25)
 
 `recomplauncher.json` (schema-valid): Easy Setup from the player's `.iso` (checked by `SLUS_212.70` and the serial;

@@ -26,9 +26,15 @@ A gamepad (Xbox, PlayStation, ...) works as a DualShock 2. Keyboard:
 Cutscenes can be skipped with Start or Triangle, as on the PS2.
 
 Command line (optional): mssaga.exe --game <your.iso> --data <folder>
-  --widescreen on|off  --window full|WxH  --vsync on|off
+  --widescreen on|off  --window full|WxH  --vsync on|off  --discord on|off
 --data keeps everything below in that folder instead of %APPDATA%\mssaga.
 RecompLauncher uses recomplauncher.json (next to mssaga.exe) to set it up.
+
+Discord
+-------
+With the Discord app running, your status shows that you're playing (title
+screen, exploring, in battle). To turn it off, start with --discord off, or
+put a file named "discord" containing 0 in the settings folder below.
 
 Saves and settings
 ------------------

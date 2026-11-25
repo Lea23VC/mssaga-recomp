@@ -53,6 +53,15 @@
         { "label": "On", "args": ["--vsync", "on"] },
         { "label": "Off", "args": ["--vsync", "off"] }
       ]
+    },
+    {
+      "id": "discord", "label": "Discord status", "in": "args",
+      "help": "Shows in Discord on this PC that you're playing: title screen, exploring or in battle.",
+      "choices": [
+        { "label": "Game's option", "args": [] },
+        { "label": "On", "args": ["--discord", "on"] },
+        { "label": "Off", "args": ["--discord", "off"] }
+      ]
     }
   ],
   "actions": [
