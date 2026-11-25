@@ -46,8 +46,10 @@ static u32 srv_iopheap(Ctx *c, u32 fn, u8 *in, u32 in_size, u8 *out, u32 out_siz
     }
 }
 
-/* ---- 0x80000006: module loader. Modules are not run: their services are reimplemented here.
- * (Saint Seiya runs its sound driver as it is, port/iop/lle; MS Saga runs none yet.) */
+/* ---- 0x80000006: module loader. Most modules are not run: their services are reimplemented here.
+ * MS Saga's sound driver runs as it is (port/iop/lle): SDRDRV (libsd for the EE, sid 0x80000701),
+ * MODHSYN (Sony's synthesizer) and RPGSND (the game's driver, sid 0x7073, which calls MODHSYN). */
+int iop_lle_load(const char *path);
 static u32 srv_loadfile(Ctx *c, u32 fn, u8 *in, u32 in_size, u8 *out, u32 out_size) {
     (void)c;
     static int next_id = 1;
@@ -58,6 +60,12 @@ static u32 srv_loadfile(Ctx *c, u32 fn, u8 *in, u32 in_size, u8 *out, u32 out_si
     if (fn == 0 || fn == 1) {                   /* LoadModule (file / from buffer) */
         const char *path = (const char *)in + 8;
         rt_log("iop", "LoadModule %s", path);
+        /* MSSAGA_SND_HLE=1 keeps the stubs (rpgsnd.c, srv_libsd): no sound effects */
+        static int hle = -1;
+        if (hle < 0) { const char *e = getenv("MSSAGA_SND_HLE"); hle = e && atoi(e); }
+        if (!hle && (strstr(path, "\\SDRDRV.IRX") || strstr(path, "\\MODHSYN.IRX") || strstr(path, "\\RPGSND.IRX")) &&
+            iop_lle_load(path))
+            rt_log("iop", "%s could not run: the sound effects stay silent", path);
         wr(out, 0, next_id++);                  /* module id */
         wr(out, 4, 0);                          /* module's result */
         return 8;

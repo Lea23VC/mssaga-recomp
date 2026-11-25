@@ -1,5 +1,22 @@
 # Status
 
+## Sound, second part: sound effects, the game's driver run as it is (2026-11-25)
+
+`SDRDRV.IRX` (libsd for the EE, sid 0x80000701), `MODHSYN.IRX` (Sony's synthesizer) and `RPGSND.IRX` (the game's
+driver, sid 0x7073, which calls MODHSYN through its exported library) are now loaded from the disc and run by the
+reference's IOP low-level emulation (`port/iop/lle`: MIPS I interpreter, IRX loader, IOP system libraries, SPU2),
+mixed into the SDL output after the ADX voices. `MSSAGA_SND_HLE=1` keeps the old stubs. MODMIDI / MODMSIN are not
+run (RPGSND doesn't import them; nothing has asked for them yet).
+
+Added to `iop_lib.c` for these modules: libsd Note2Pitch / Pitch2Note / ProcBatch / ProcBatchEx (13-16), 30-33;
+thbase ChangeThreadPriority, ReferThreadStatus, CancelWakeupThread, GetSystemTime, SysClock2USec; sysclib
+look_ctype_table, strncmp, strtol; loadcore 7. No import is left unimplemented at the title. The modules sit at
+0x38000-0x4C000 (LLE heap 0x30000-0x100000, below the HLE's buffers).
+
+Title test (`MSSAGA_SPU_DUMP=build/spu.raw`): a burst at START, then one short blip per cursor move (peaks ~5,600).
+`MSSAGA_SPU_DUMP` writes the SPU2's output alone (raw s16 stereo 48 kHz). Checked by ear on CachyOS: menu cursor and
+the GM's steps sound; the music is loud against the effects, as on the real hardware (left as it is).
+
 ## Sound, first part: CRI ADX through SDL (2026-11-25)
 
 The build scripts define `MSSAGA_SDL3`, so `port/iop/cri_adxi.c` plays CRI's PS2RNA voices through SDL (48 kHz). The

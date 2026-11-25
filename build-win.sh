@@ -31,7 +31,7 @@ compile() {   # opt, files...
 }
 compile -O1 build/recomp/*.c build/dll/c/*.c
 compile -O2 build/vu/*.c                       # the game's VU1 programs (build.sh writes them; none at run time here)
-compile -O2 port/*.c port/runtime/*.c port/kernel/*.c port/iop/*.c port/hle/*.c port/gs/*.c
+compile -O2 port/*.c port/runtime/*.c port/kernel/*.c port/iop/*.c port/hle/*.c port/gs/*.c port/iop/lle/*.c
 
 # console program for now (the log shows in its window); -mwindows would hide it
 $CC -static-libgcc -o build-win/mssaga.exe build-win/obj/*.o -L$SDL/lib -lSDL3 \
