@@ -16,12 +16,12 @@
 /* the folder the executable is in, without the trailing slash; 0: found */
 int platform_exe_dir(char *out, size_t n);
 
-/* where the settings and the memory card live, created if missing: ~/.local/share/sstheh
- * ($XDG_DATA_HOME/sstheh) on Linux, %APPDATA%\sstheh on Windows, ~/Library/Application Support/sstheh
- * on macOS ($XDG_DATA_HOME/sstheh there too when it is set) */
+/* where the settings and the memory card live, created if missing: ~/.local/share/mssaga
+ * ($XDG_DATA_HOME/mssaga) on Linux, %APPDATA%\mssaga on Windows, ~/Library/Application Support/mssaga
+ * on macOS ($XDG_DATA_HOME/mssaga there too when it is set) */
 void platform_data_dir(char *out, size_t n);
 
-/* the folder for caches (the VU1 programs compiled at run time), without the sstheh part:
+/* the folder for caches (the VU1 programs compiled at run time), without the mssaga part:
  * $XDG_CACHE_HOME or ~/.cache on Linux, ~/Library/Caches on macOS */
 void platform_cache_base(char *out, size_t n);
 

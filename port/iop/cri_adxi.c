@@ -32,8 +32,8 @@
  *
  * The PCM (16 bits, signed, one stream per channel) is played through SDL: the audio callback mixes
  * the playing voices at 48 kHz, reading their streams' chunks, and what it has played goes back to
- * the EE as free space at the next exchange. Without an audio device (or SSTHEH_AUDIO=0) the
- * streams are drained in real time as if played. SSTHEH_AUDIO_DUMP=file.wav records the mix.
+ * the EE as free space at the next exchange. Without an audio device (or MSSAGA_AUDIO=0) the
+ * streams are drained in real time as if played. MSSAGA_AUDIO_DUMP=file.wav records the mix.
  */
 #include <math.h>
 #include <pthread.h>
@@ -241,13 +241,13 @@ void cri_audio_start(void) {
     rt_log("adxi", "built without sound: the streams are drained in real time");
     return;
 #else
-    const char *e = getenv("SSTHEH_AUDIO");
+    const char *e = getenv("MSSAGA_AUDIO");
     if (e && !atoi(e)) return;
     if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) { rt_log("adxi", "no audio: %s", SDL_GetError()); return; }
     SDL_AudioSpec spec = {SDL_AUDIO_F32, 2, OUT_RATE};
     stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, audio_cb, NULL);
     if (!stream) { rt_log("adxi", "no audio device: %s", SDL_GetError()); return; }
-    const char *d = getenv("SSTHEH_AUDIO_DUMP");
+    const char *d = getenv("MSSAGA_AUDIO_DUMP");
     if (d && (dump = fopen(d, "wb"))) { wav_header(dump, 0); atexit(dump_close); }
     SDL_ResumeAudioStreamDevice(stream);
     audio_state = 1;

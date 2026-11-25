@@ -61,7 +61,7 @@ void platform_data_dir(char *out, size_t n) {
 #endif
 #endif
     mkdir(base, 0755);
-    snprintf(out, n, "%s/sstheh", base);
+    snprintf(out, n, "%s/mssaga", base);           /* MS Saga (the reference used "sstheh") */
     mkdir(out, 0755);
 }
 

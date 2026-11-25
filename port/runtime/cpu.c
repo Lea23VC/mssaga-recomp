@@ -113,7 +113,7 @@ void rt_di(Ctx *c) { (void)c; cop0_status &= ~0x10000u; }
 int rt_trace_on;
 static u8 called[(0x02000000 - 0x00100000) / 4 / 8];   /* MS Saga: all of RAM (the DLLs are above 0x500000) */
 
-/* SSTHEH_TRACE_COUNT=from,to (vertical blanks, with --trace): calls per function in that window,
+/* MSSAGA_TRACE_COUNT=from,to (vertical blanks, with --trace): calls per function in that window,
  * printed at its end, most called first */
 static u32 *counts, count_from, count_to;
 
@@ -126,7 +126,7 @@ static void count_call(u32 addr) {
     static int init;
     if (!init) {
         init = 1;
-        const char *e = getenv("SSTHEH_TRACE_COUNT");
+        const char *e = getenv("MSSAGA_TRACE_COUNT");
         if (e && sscanf(e, "%u,%u", &count_from, &count_to) == 2) counts = calloc(0x100000, 4);
     }
     if (!counts) return;

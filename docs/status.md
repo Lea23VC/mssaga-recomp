@@ -1,5 +1,25 @@
 # Status
 
+## Where it stops now: RenderWare waits for its DMA (2026-11-24)
+
+With the DLLs running, the title DLL draws its first frames, then the main thread spins forever in RenderWare's
+`_rwDMAWaitQueue` → `_rwDMAForceBufferSwap` (found with `MSSAGA_DUMP_AT=400`). It waits for the queue state
+(`D_003C97F0` = `D_003C97F4`, `D_003C97E8` = 0) that RenderWare's DMA-end handler (`func_001C4B18`, DMAC channels 1
+and 2) keeps. That handler reads VIF1/GIF status and the channels' MADR/QWC/TADR to chain the next packet, and
+`port/stubs.c` only pretends transfers end. **Next: port the reference's DMAC → VIF → VU1 → GS (`port/gs/`,
+milestone 4)** instead of faking more registers. That needs SDL3, Vulkan headers and a GLSL compiler (Ubuntu
+22.04 has no `libsdl3-dev` and no `glslc`: build SDL3 from source and use `glslangValidator -V`).
+
+Also done:
+- **Memory card:** the game uses classic libmc (not libmc2 like Saint Seiya). `port/hle/memcard.c` replaces its 22
+  public functions (all exported by name) with native ones over a folder (`~/.local/share/mssaga/memcard1`,
+  `MSSAGA_MEMCARD=dir`). Each call finishes at once and leaves its result for `sceMcSync`. Not exercised yet:
+  the title stops at the DMA wait before its first `sceMcGetInfo`.
+- Debugging: `-vv` names each syscall's caller; `MSSAGA_DUMP_AT=<vblank>` shows where the polling thread is (registers
+  and return addresses on its stack) and stops. The reference's `SSTHEH_*` variables are now `MSSAGA_*`.
+- On the way, CRI's frame wait (`ADXM_WaitVsync`: the main thread sleeps, the vsync thread wakes it) was checked and
+  works with the reference kernel.
+
 ## The DLLs are translated and run (2026-11-24)
 
 `./build.sh` now also extracts the 11 DLLs from the ISO (`tools/dlls.py`: AFS + SD0 → `build/dll/bin/`) and

@@ -13,7 +13,7 @@ const FuncEntry *rt_find(u32 addr);
 void rt_dll_register(u32 base, const DllModule *m);
 const char *rt_name_of(u32 addr);
 
-/* hle/heap.c: what a crash report says about an address in a freed block (SSTHEH_POISON_FREE) */
+/* hle/heap.c: what a crash report says about an address in a freed block (MSSAGA_POISON_FREE) */
 void heap_explain(const char *what, u32 addr);
 
 /* kernel.c */

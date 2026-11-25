@@ -20,3 +20,27 @@
 
 # SN DLL loader: register the translated DLL at the base it is loaded at (port/hle/dll.c)
 0x00132318 hle_snDllLoaded before
+
+# libmc (SDK 2.8) on a folder: port/hle/memcard.c
+0x002597B0 hle_sceMcInit
+0x00259980 hle_sceMcEnd
+0x00259A10 hle_sceMcZero            # sceMcChangeThreadPriority
+0x00259AD0 hle_sceMcGetSlotMax
+0x00259B98 hle_sceMcOpen
+0x00259CC0 hle_sceMcMkdir
+0x00259CF8 hle_sceMcClose
+0x00259DB8 hle_sceMcSeek
+0x00259F30 hle_sceMcRead
+0x0025A048 hle_sceMcWrite
+0x0025A1C0 hle_sceMcSync
+0x0025A2E0 hle_sceMcGetInfo
+0x0025A460 hle_sceMcZero            # sceMcUdCheckNewCard
+0x0025A4D0 hle_sceMcGetDir
+0x0025A6B0 hle_sceMcChdir
+0x0025A7F0 hle_sceMcFormat
+0x0025A8C0 hle_sceMcDelete
+0x0025A9E0 hle_sceMcFlush
+0x0025AAA0 hle_sceMcSetFileInfo
+0x0025AC70 hle_sceMcRename
+0x0025ADD0 hle_sceMcUnformat
+0x0025AEA0 hle_sceMcGetEntSpace
