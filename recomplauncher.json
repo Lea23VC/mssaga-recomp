@@ -1,0 +1,65 @@
+{
+  "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
+  "format": 1,
+  "name": "MS Saga: A New Dawn",
+  "repo": "Lea23VC/mssaga-recomp",
+  "inputs": [
+    {
+      "id": "game",
+      "label": "Your disc image (.iso) of the USA PlayStation 2 release, serial SLUS-21270.",
+      "formats": [{ "type": "file", "extensions": ["iso"] }],
+      "check": { "iso9660": "SLUS_212.70", "ids": ["SLUS-21270"] },
+      "dumps": [
+        { "name": "USA (v1.01)", "size": 1632796672, "crc32": "e7c78655" }
+      ]
+    }
+  ],
+  "start": {
+    "program": ["mssaga.exe", "mssaga"],
+    "args": ["--game", "{input:game}", "--data", "{data}"]
+  },
+  "saves": ["{data}/memcard1"],
+  "folders": {
+    "saves": [{ "path": "{data}/memcard1" }],
+    "logs": [{ "path": "{data}" }],
+    "data": [{ "path": "{data}" }]
+  },
+  "settings": [
+    {
+      "id": "widescreen", "label": "Picture", "in": "args",
+      "help": "16:9 shows more of the scene at the sides; menus keep their shape. 4:3 is the PlayStation 2's picture. F2 switches it in the game.",
+      "choices": [
+        { "label": "Game's option", "args": [] },
+        { "label": "16:9", "args": ["--widescreen", "on"] },
+        { "label": "4:3", "args": ["--widescreen", "off"] }
+      ]
+    },
+    {
+      "id": "window", "label": "Window", "in": "args",
+      "help": "The window's size when the game starts. F1 changes it in the game.",
+      "choices": [
+        { "label": "Game's option", "args": [] },
+        { "label": "Full screen", "args": ["--window", "full"] },
+        { "label": "1280 x 720", "args": ["--window", "1280x720"] },
+        { "label": "1920 x 1080", "args": ["--window", "1920x1080"] },
+        { "label": "2560 x 1440", "args": ["--window", "2560x1440"] }
+      ]
+    },
+    {
+      "id": "vsync", "label": "V-Sync", "in": "args",
+      "help": "Waits for the screen before each picture: no tearing. F4 switches it in the game.",
+      "choices": [
+        { "label": "Game's option", "args": [] },
+        { "label": "On", "args": ["--vsync", "on"] },
+        { "label": "Off", "args": ["--vsync", "off"] }
+      ]
+    }
+  ],
+  "actions": [
+    { "id": "saves", "label": "Memory card", "help": "Your saves: the memory card in slot 1.", "open": "saves" },
+    { "id": "data", "label": "Game data", "help": "The memory card, the log and the settings the game keeps.", "open": "data" }
+  ],
+  "system": {
+    "windows": { "version": "10" }
+  }
+}

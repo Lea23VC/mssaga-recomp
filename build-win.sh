@@ -4,7 +4,8 @@
 #   ./build.sh          first: it writes the translated C (build/recomp, build/dll/c) and the shaders (build/shaders)
 #   tools/win_deps.sh   once: SDL3 for MinGW into tools/win/
 #   ./build-win.sh      -> build-win/mssaga.exe (with its icon), SDL3.dll, FFmpeg's DLLs, README.txt
-#                          (docs/windows-README.txt), licenses/: nothing from the game, it can be shared
+#                          (docs/windows-README.txt), recomplauncher.json, licenses/: nothing from the game, it can
+#                          be shared. tools/package-win.sh zips it for a release.
 #
 # Needs MinGW-w64 with POSIX threads (CachyOS/Arch: pacman -S mingw-w64-gcc; Ubuntu: apt install mingw-w64). build-win/ and tools/win/ stay out of git:
 # mssaga.exe asks for the disc image once and remembers it, and copies the game's executable out of it; it has no console window (its log: %APPDATA%\mssaga\mssaga.log, or the
@@ -58,6 +59,7 @@ cp "$SDL/bin/SDL3.dll" build-win/
 rm -rf build-win/disc                         # nothing from the game: mssaga.exe takes SLUS_212.70 from the ISO
 rm -f build-win/mssaga.bat                     # (older builds: it held one person's ISO path)
 cp docs/windows-README.txt build-win/README.txt
+cp recomplauncher.json build-win/              # RecompLauncher reads it from the top of the release zip
 mkdir -p build-win/licenses
 cp licenses/SaintSeiyaRecomp-MIT.txt build-win/licenses/
 cp tools/win/SDL3-3.2.30/LICENSE.txt build-win/licenses/SDL3-zlib.txt

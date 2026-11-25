@@ -1,5 +1,15 @@
 # Status
 
+## RecompLauncher support (2026-11-25)
+
+`recomplauncher.json` (schema-valid): Easy Setup from the player's `.iso` (checked by `SLUS_212.70` and the serial;
+verified against Redump disc 13040: 1,632,796,672 bytes, CRC32 e7c78655, which matches our copy), started as
+`mssaga --game {input:game} --data {data}`; saves in `{data}/memcard1`; Picture / Window / V-Sync settings passed as
+arguments. New options in main.c (no change without them): `--game` (= `--iso`), `--data <dir>` (`MSSAGA_DATA`:
+everything the port writes, caches in its `cache`), `--widescreen on|off`, `--window full|WxH`, `--vsync on|off`.
+`build-win.sh` copies the manifest next to `mssaga.exe`; `tools/package-win.sh` makes
+`build/mssaga-recomp-<version>-windows-x64.zip`. Not done: CHD, a portable Linux release, Recomp Achievements.
+
 ## Windows release tidied (2026-11-25)
 
 `build-win.sh` now makes a window program (`-mwindows`) with an icon (`tools/make_icon.py` draws a generic dawn;

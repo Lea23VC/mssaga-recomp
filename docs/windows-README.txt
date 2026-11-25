@@ -25,6 +25,11 @@ A gamepad (Xbox, PlayStation, ...) works as a DualShock 2. Keyboard:
 
 Cutscenes can be skipped with Start or Triangle, as on the PS2.
 
+Command line (optional): mssaga.exe --game <your.iso> --data <folder>
+  --widescreen on|off  --window full|WxH  --vsync on|off
+--data keeps everything below in that folder instead of %APPDATA%\mssaga.
+RecompLauncher uses recomplauncher.json (next to mssaga.exe) to set it up.
+
 Saves and settings
 ------------------
 Everything is kept in %APPDATA%\mssaga:
