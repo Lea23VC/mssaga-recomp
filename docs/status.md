@@ -1,5 +1,14 @@
 # Status
 
+## Windows release tidied (2026-11-25)
+
+`build-win.sh` now makes a window program (`-mwindows`) with an icon (`tools/make_icon.py` draws a generic dawn;
+nothing from the game), `README.txt` for players (`docs/windows-README.txt`: running, controls, F-keys, where saves
+are) and `licenses/` (SDL3 zlib, FFmpeg LGPL, SaintSeiyaRecomp MIT). The folder carries nothing from the game any
+more: with no `disc/SLUS_212.70` next to the program, `main.c` copies the executable out of the ISO into the settings
+folder (tested on Linux: byte-identical, boots). The log goes to `%APPDATA%\mssaga\mssaga.log`, or to the command
+prompt the program was started from. `mssaga.bat` (one person's ISO path) is gone. Not yet run on Windows.
+
 ## 60 fps: an experiment, parked (2026-11-25)
 
 The game holds itself at 30 fps twice: RenderWare's minimum of 2 vertical blanks per frame (`B3D_VsyncCntSet(2)` →

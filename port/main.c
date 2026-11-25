@@ -14,8 +14,12 @@
  * Finding the files (so a double-click works): the executable from the command line, else disc/SLUS_212.70 in the
  * current folder, next to the program, or one folder up (build/mssaga in the repository). The disc image from --iso,
  * else $MSSAGA_ISO, else the one chosen last time (iso.txt in the settings folder), else disc/game.iso in those
- * same places, else a file picker asks for it (and the choice is kept in iso.txt). A start-up error is also shown
+ * same places, else a file picker asks for it (and the choice is kept in iso.txt). With no disc/SLUS_212.70, the
+ * executable is copied out of the disc image into the settings folder. A start-up error is also shown
  * in a message box: started from Windows' Explorer, the console window closes at once.
+ *
+ * Windows: the program has no console window of its own (-mwindows). Started from a command prompt it writes its
+ * log there; otherwise into mssaga.log in the settings folder (%APPDATA%\mssaga).
  *
  * Structure from SaintSeiyaRecomp's port/main.c (MIT, Copyright (c) 2026 Matheus Nunes Pereira;
  * licenses/SaintSeiyaRecomp-MIT.txt).
@@ -47,6 +51,49 @@ void perf_calibrate(void);
 int vu_jit_generate(const char *dir);     /* gs/vu_jit.c */
 
 static u32 entry;
+
+/* No disc/SLUS_212.70 next to the program (a Windows folder carries nothing from the game): the executable is
+ * copied out of the disc image once, into the settings folder. 1 if path names it. */
+int cdvd_find(const char *path, u32 *lsn, u32 *size);
+int cdvd_read(u32 lsn, u32 count, u8 *out);
+static int extract_elf(char *path, size_t n) {
+    char dir[1024];
+    platform_data_dir(dir, sizeof dir);
+    snprintf(path, n, "%s/SLUS_212.70", dir);
+    u32 lsn, size;
+    if (!cdvd_find("\\SLUS_212.70;1", &lsn, &size) || size < 0x1000 || size > (32u << 20)) return 0;
+    FILE *f = fopen(path, "rb");
+    if (f) {                                      /* there already, the same size: keep it */
+        fseek(f, 0, SEEK_END);
+        long have = ftell(f);
+        fclose(f);
+        if (have == (long)size) return 1;
+    }
+    u8 *buf = malloc((size + 2047) & ~2047u);
+    int ok = buf && !cdvd_read(lsn, (size + 2047) / 2048, buf) && (f = fopen(path, "wb")) != NULL;
+    if (ok) {
+        ok = fwrite(buf, 1, size, f) == size;
+        fclose(f);
+    }
+    free(buf);
+    if (ok) rt_log("main", "SLUS_212.70 copied from the disc image to %s", path);
+    return ok;
+}
+
+#ifdef _WIN32
+#include <windows.h>
+static void win_log_setup(void) {
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {       /* started from a command prompt: log there */
+        freopen("CONOUT$", "w", stderr);
+        freopen("CONOUT$", "w", stdout);
+        return;
+    }
+    char dir[1024], path[1100];
+    platform_data_dir(dir, sizeof dir);
+    snprintf(path, sizeof path, "%s/mssaga.log", dir);
+    if (freopen(path, "w", stderr)) setvbuf(stderr, NULL, _IONBF, 0);   /* unbuffered: nothing lost in a crash */
+}
+#endif
 
 static void *game_main(void *arg) {
     (void)arg;
@@ -150,6 +197,9 @@ int main(int argc, char **argv) {
     /* SDL's SIGINT/SIGTERM handlers only queue a quit event, which --shot never reads: `timeout` and Ctrl+C
      * could not stop a test run. Keep the default signals (the window still closes with its close button). */
     SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
+#ifdef _WIN32
+    win_log_setup();
+#endif
     const char *elf = NULL, *iso = NULL, *gen_vu = NULL;
     int shots[64], nshots = 0;
     for (int i = 1; i < argc; i++) {
@@ -168,10 +218,9 @@ int main(int argc, char **argv) {
         }
         else elf = argv[i];
     }
-    if (!elf && !(elf = find_file("disc/SLUS_212.70")))
-        return fail("The game's executable (disc/SLUS_212.70) was not found next to the program.\n"
-                    "Build the port again (it copies it there), or give its path on the command line.");
-    if (gen_vu) {                                 /* the build: only the executable is needed */
+    if (!elf) elf = find_file("disc/SLUS_212.70");
+    if (gen_vu) {
+        if (!elf) return fail("--gen-vu needs the game's executable (disc/SLUS_212.70)");                                 /* the build: only the executable is needed */
         memory_init();
         if (memory_load_elf(elf, &entry)) { fprintf(stderr, "cannot load %s\n", elf); return 1; }
         return vu_jit_generate(gen_vu);
@@ -184,6 +233,11 @@ int main(int argc, char **argv) {
         remove(mem);                              /* ask again next time */
         return fail("Cannot read the disc image:\n%s\n\nStart the program again to choose another one.", iso);
     }
+    static char from_iso[1100];
+    if (!elf && extract_elf(from_iso, sizeof from_iso)) elf = from_iso;
+    if (!elf)
+        return fail("The game's executable (SLUS_212.70) is not on this disc image:\n%s\n\n"
+                    "Is it MS Saga: A New Dawn (USA)?", iso);
     rt_functab = game_functab;
     rt_functab_count = game_functab_count;
     memory_init();
