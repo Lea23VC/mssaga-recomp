@@ -104,6 +104,29 @@ void rt_log(const char *area, const char *fmt, ...) {
     va_end(ap);
 }
 
+/* The registers and, as far as the stack shows them, the calls under way (words that are a return address:
+ * right after a JAL or JALR in the code). */
+static void dump_ctx(Ctx *c) {
+    static const char *names[32] = {"zero", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2",
+        "t3", "t4", "t5", "t6", "t7", "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9", "k0",
+        "k1", "gp", "sp", "fp", "ra"};
+    for (int i = 0; i < 32; i++)
+        fprintf(stderr, "%4s=%016llX%s", names[i], (unsigned long long)c->r[i].d[0], i % 4 == 3 ? "\n" : " ");
+    fprintf(stderr, "ra is in %s\n", rt_name_of(RW(31)));
+    for (int i = 1; i < 32; i++) heap_explain(names[i], RW(i));
+    fprintf(stderr, "stack (return addresses from sp up):\n");
+    u32 sp = RW(29) & 0x01FFFFFC;
+    for (u32 a = sp, shown = 0; a < sp + 0x2000 && a + 4 <= 0x02000000 && shown < 24; a += 4) {
+        u32 w, call;
+        memcpy(&w, rt_ram + a, 4);
+        if (w < 0x00100008 || w >= 0x02000000 || (w & 3)) continue;
+        memcpy(&call, rt_ram + w - 8, 4);
+        if ((call >> 26) != 3 && (call & 0xFC00003F) != 9) continue;   /* JAL, JALR */
+        fprintf(stderr, "  sp+%04X: %08X in %s\n", a - sp, w, rt_name_of(w));
+        shown++;
+    }
+}
+
 _Noreturn void rt_fatal(Ctx *c, const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
@@ -111,28 +134,7 @@ _Noreturn void rt_fatal(Ctx *c, const char *fmt, ...) {
     vfprintf(stderr, fmt, ap);
     fputc('\n', stderr);
     va_end(ap);
-    if (c) {
-        static const char *names[32] = {"zero", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2",
-            "t3", "t4", "t5", "t6", "t7", "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "t8", "t9", "k0",
-            "k1", "gp", "sp", "fp", "ra"};
-        for (int i = 0; i < 32; i++)
-            fprintf(stderr, "%4s=%016llX%s", names[i], (unsigned long long)c->r[i].d[0], i % 4 == 3 ? "\n" : " ");
-        fprintf(stderr, "ra is in %s\n", rt_name_of(RW(31)));
-        for (int i = 1; i < 32; i++) heap_explain(names[i], RW(i));
-        /* the calls under way, as far as the stack shows them: words that are a return address
-         * (right after a JAL or JALR in the code) */
-        fprintf(stderr, "stack (return addresses from sp up):\n");
-        u32 sp = RW(29) & 0x01FFFFFC;
-        for (u32 a = sp, shown = 0; a < sp + 0x2000 && a + 4 <= 0x02000000 && shown < 24; a += 4) {
-            u32 w, call;
-            memcpy(&w, rt_ram + a, 4);
-            if (w < 0x00100008 || w >= 0x02000000 || (w & 3)) continue;
-            memcpy(&call, rt_ram + w - 8, 4);
-            if ((call >> 26) != 3 && (call & 0xFC00003F) != 9) continue;   /* JAL, JALR */
-            fprintf(stderr, "  sp+%04X: %08X in %s\n", a - sp, w, rt_name_of(w));
-            shown++;
-        }
-    }
+    if (c) dump_ctx(c);
     fflush(stderr);
     _exit(1);
 }
@@ -302,6 +304,22 @@ static void *timer_main(void *arg) {
         platform_sleep_until(&next);
         timer_vblank = 1;
         rt_irq_pending = 1;
+        /* MS Saga: a watchdog. A vertical blank is only counted when the guest polls (backward branches,
+         * syscalls); none for 5 s means a thread spins without polling, or a deadlock. Show where the thread
+         * holding the CPU is, once (its registers are in memory; read without the lock, so they may be in motion).
+         * MSSAGA_WATCHDOG=0 turns it off. */
+        static u32 last_vb, still;
+        static int told, on = -1;
+        if (on < 0) { const char *e = getenv("MSSAGA_WATCHDOG"); on = !(e && !atoi(e)); }
+        if (vblanks != last_vb) { last_vb = vblanks; still = 0; }
+        else if (on && !told && ++still == 300) {
+            told = 1;
+            int t = cur;
+            fprintf(stderr, "\n*** WATCHDOG: no vertical blank for 5 s (at %u); thread %d holds the CPU%s\n", vblanks, t,
+                    in_irq ? ", in an interrupt handler" : "");
+            dump_ctx(in_irq ? &irq_ctx : t > 0 ? &threads[t].ctx : &irq_ctx);
+            fflush(stderr);
+        }
     }
     return NULL;
 }

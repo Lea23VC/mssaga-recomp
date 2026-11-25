@@ -250,7 +250,7 @@ void vu_start(int id, int addr, u32 itop) {
         f = fopen("build/vu1_mem.bin", "wb"); fwrite(vu1_mem, 1, sizeof vu1_mem, f); fclose(f);
         rt_log("vu", "dumped VU1 code and data before starting %03X", addr);
     }
-    if (id == 1) vu1_itop = itop;
+    if (id == 1) { vu1_itop = itop; perf.vu1_runs++; }
     static int snap = -1;
     if (snap < 0) snap = getenv("MSSAGA_VUSNAP") != NULL;
     if (id == 1 && snap) snap_count();

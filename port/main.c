@@ -18,6 +18,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <SDL3/SDL.h>
+
 #include "r5900.h"
 #include "runtime.h"
 #include "kernel.h"
@@ -87,6 +89,9 @@ int main(int argc, char **argv) {
     pthread_attr_setstacksize(&a, 64 << 20);     /* deep guest call chains run on the host stack */
     pthread_create(&game, &a, game_main, NULL);
     platform_thread_name(game, "game");
+    /* SDL's SIGINT/SIGTERM handlers only queue a quit event, which --shot never reads: `timeout` and Ctrl+C
+     * could not stop a test run. Keep the default signals (the window still closes with its close button). */
+    SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
     if (nshots) return display_shots(shots, nshots);
     return display_window();
 }

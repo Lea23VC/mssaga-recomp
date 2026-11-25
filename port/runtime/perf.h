@@ -19,6 +19,8 @@ typedef struct {
     volatile uint64_t pipe_ns;
     volatile uint64_t jit_lookups, jit_lookup_ns;
     volatile uint64_t jit_hops;      /* VU1 programs left for another (a jump to a pair they don't enter) */  /* VU1 programs identified again after a code change */
+    volatile uint64_t vu1_runs;      /* MS Saga: VU1 programs started (MSCAL/MSCNT...), for MSSAGA_FRAME_LOG */
+    volatile uint64_t kicks;         /* MS Saga: XGKICKs (GIF path 1) */
 } PerfCounters;
 
 extern PerfCounters perf;

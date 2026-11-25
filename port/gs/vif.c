@@ -14,6 +14,7 @@
  * UNPACK: bits 0-1 VL (element size 32/16/8/5 bits), 2-3 VN (1-4 elements), bit 4 MASK.
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "r5900.h"
@@ -57,7 +58,14 @@ static void run(Vif *v, u32 code, const u32 *data) {
     case 0x03: v->base = imm & 0x3FF; v->dbf = 0; v->tops = v->base; break;
     case 0x04: v->itop = imm & 0x3FF; break;
     case 0x05: v->mode = imm & 3; break;
-    case 0x06: gif_path3_masked = (code >> 15) & 1; break;   /* MS Saga: MSKPATH3 (RenderWare waits on GIF_STAT.M3P) */
+    case 0x06: {                /* MS Saga: MSKPATH3 (RenderWare waits on GIF_STAT.M3P) */
+        static int log = -1;
+        if (log < 0) log = getenv("MSSAGA_FIFO_LOG") != NULL;
+        if (log) rt_log("vif", "VIF%d MSKPATH3 %d", v->id, (code >> 15) & 1);
+        gif_path3_masked = (code >> 15) & 1;
+        if (!gif_path3_masked) { void dmac_path3_unmasked(void); dmac_path3_unmasked(); }
+        break;
+    }
     case 0x07: case 0x10: case 0x11: case 0x13: break;
     case 0x14: case 0x15: case 0x17:                                      /* MSCAL / MSCALF / MSCNT */
         if (v->id == 1) {
@@ -133,6 +141,9 @@ static void feed(Vif *v, const u32 *w, u32 n) {
         v->got = 0;
     }
 }
+
+/* MS Saga: the command VIF1 is still collecting data for (0xFFFFFFFF: none), for the FIFO log in dmac.c */
+u32 vif1_pending(void) { return vifs[1].cmd; }
 
 void vif1_dma(const u8 *data, u32 qwc) { feed(&vifs[1], (const u32 *)data, qwc * 4); }
 void vif0_dma(const u8 *data, u32 qwc) { feed(&vifs[0], (const u32 *)data, qwc * 4); }

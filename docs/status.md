@@ -1,5 +1,22 @@
 # Status
 
+## The logo freeze, and the first 3D scene (2026-11-25)
+
+- **Freeze fixed** (about 1 run in 5 stopped on the Sofdec/ADX logos): RenderWare's DMA handler masks GIF path 3
+  through the VIF1 FIFO, starts the GIF upload (channel 2), then waits for GIF_STAT.FQC to show it waiting before
+  starting the channel-1 chain that unmasks it. The port ran the upload at once; when the renderer thread was quick,
+  FQC read 0 forever, inside an interrupt handler. Now a channel-2 transfer started while path 3 is masked is held
+  (FQC reports it) and runs when VIF1 executes MSKPATH3 0, where the PS2 would run it (`port/gs/dmac.c`). 12/12 runs ok.
+- **After the prologue the first 3D scene renders** (a hangar with a mobile suit, `bmap` + `sub`), but at ~1 fps:
+  ~1 million primitives per frame from a normal-sized DMA chain (~290 tags, 59,000 quadwords), with the interpreter
+  as with the JIT; the primitives look sane (textured strips), so something repeats them. Memory grows with them
+  (5 GB of mappings: in WSL's 5.9 GB this took VS Code down). Next: count VU1 runs and XGKICKs per frame.
+- Tools: a watchdog in the vblank timer (no vblank for 5 s: the stuck thread's registers and stack;
+  `MSSAGA_WATCHDOG=0` off), `MSSAGA_FIFO_LOG=1` (VIF1 FIFO writes, MSKPATH3), chain sizes in `MSSAGA_DMA_LOG`,
+  `tools/sheet.py` (screenshots side by side). SDL no longer swallows SIGTERM/SIGINT, so `timeout` stops a run.
+- **Test runs: cap memory**, e.g. `(ulimit -v 2500000; timeout 200 ./build/mssaga ...)`, and check for leftover
+  `build/mssaga` processes afterwards.
+
 ## NEW GAME reaches the prologue (2026-11-25)
 
 After the name is confirmed the game plays its opening movie (CRI Sofdec, `MOVIE_PlayStart(0x6499, …)`). Sofdec

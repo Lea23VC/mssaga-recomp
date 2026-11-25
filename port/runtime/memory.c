@@ -50,8 +50,10 @@ u32 rt_mmio_read(Ctx *c, u32 a, int size) {
     if (p_ == 0x10003800) return 0;
     if (p_ == 0x10003C00) return dmac_gs_busy() ? 0x1F000000u : 0;
     if (p_ == 0x10003020) {               /* GIF_STAT; MS Saga: + M3P (bit 1), path 3 masked by VIF1 MSKPATH3 */
+        /* and FQC (24-28) while a path 3 transfer waits for the unmask (gs/dmac.c) */
         extern volatile int gif_path3_masked;
-        return (dmac_gs_busy() ? 0x1F000E00u : 0) | (gif_path3_masked ? 2u : 0);
+        int dmac_gif_held(void);
+        return (dmac_gs_busy() ? 0x1F000E00u : 0) | (dmac_gif_held() ? 0x1F000000u : 0) | (gif_path3_masked ? 2u : 0);
     }
     /* registers whose reads must not just echo the last write */
     if (p_ == 0x12001000) {               /* GS CSR: report VSync/FINISH events as happened */

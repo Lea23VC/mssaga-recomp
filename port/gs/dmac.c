@@ -64,10 +64,15 @@ static void deliver(Ctx *c, int ch, const u8 *data, u32 qwc) {
     else if (ch == 0) vif0_dma(data, qwc);
 }
 
+/* MS Saga: MSSAGA_DMA_LOG=1 logs every transfer's start and end (finding what RenderWare waits for) */
+static int dma_log = -1;
+static int want_dma_log(void) { if (dma_log < 0) dma_log = getenv("MSSAGA_DMA_LOG") != NULL; return dma_log; }
+
 static void run_chain(Ctx *c, int ch) {
     u32 *r = reg[ch];
     u32 tadr = r[0x30 / 4], asr[2] = {r[0x40 / 4], r[0x50 / 4]};
     int asp = (r[0] >> 4) & 3, tte = (r[0] >> 6) & 1;
+    u32 ntags = 0, nqwc = 0;                                    /* MS Saga: for MSSAGA_DMA_LOG */
     for (int guard = 0; guard < 100000; guard++) {
         const u8 *t = mem(tadr, 0);
         if (!t) { rt_log("dmac", "%s: tag address %08X unmapped", names[ch], tadr); break; }
@@ -80,6 +85,8 @@ static void run_chain(Ctx *c, int ch) {
             vif_tag(ch, t + 8);
         }
         r[0] = (r[0] & 0xFFFF) | (u32)(tag & 0xFFFF0000);       /* CHCR.TAG = upper 16 bits of the tag */
+        ntags++;
+        nqwc += qwc;
         u32 next = tadr + 16;
         switch (id) {
         case 0: deliver(c, ch, mem(addr, spr), qwc); next = 0; break;                     /* refe */
@@ -103,6 +110,7 @@ static void run_chain(Ctx *c, int ch) {
     }
     r[0x30 / 4] = tadr;
     r[0x20 / 4] = 0;
+    if (want_dma_log()) rt_log("dma", "%s chain: %u tags, %u quadwords", names[ch], ntags, nqwc);
 }
 
 /* Scratchpad <-> RAM: fromSPR (8) copies QWC quadwords from SPR at SADR to MADR; toSPR (9) copies
@@ -158,9 +166,6 @@ static void spr_transfer(Ctx *c, int ch) {
     r[0x80 / 4] = sadr;
 }
 
-/* MS Saga: MSSAGA_DMA_LOG=1 logs every transfer's start and end (finding what RenderWare waits for) */
-static int dma_log = -1;
-static int want_dma_log(void) { if (dma_log < 0) dma_log = getenv("MSSAGA_DMA_LOG") != NULL; return dma_log; }
 
 static void finish(int ch) {
     u32 *r = reg[ch];
@@ -221,9 +226,18 @@ int dmac_gs_busy(void) { return __atomic_load_n(&outstanding, __ATOMIC_ACQUIRE) 
 /* MS Saga: a quadword the EE writes into the VIF1 FIFO (0x10005000) itself, not by DMA. RenderWare does it to
  * set VIF1 up at start (STCYCL, STMASK, STMOD) and to mask GIF path 3 (MSKPATH3) before an upload. It runs
  * after whatever VIF1 / GIF work is still queued, like the hardware's FIFO. */
+u32 vif1_pending(void);                     /* vif.c */
+extern volatile int gif_path3_masked;      /* vif.c: VIF1 MSKPATH3 */
+
 void dmac_vif1_fifo(const u8 *qw) {
     while (dmac_gs_busy()) usleep(20);
+    static int log = -1;
+    if (log < 0) log = getenv("MSSAGA_FIFO_LOG") != NULL;
+    u32 w[4], pend = vif1_pending();
+    memcpy(w, qw, 16);
     vif1_dma(qw, 1);
+    if (log) rt_log("fifo", "VIF1 FIFO %08X %08X %08X %08X (VIF1 was collecting for %08X) -> path 3 %s", w[0], w[1], w[2],
+                    w[3], pend, gif_path3_masked ? "masked" : "open");
 }
 
 static void queue_job(int ch) {
@@ -260,6 +274,18 @@ void dmac_gs_flip(void) {
     else gpu_seal_frame();
 }
 
+static volatile int gif_held;               /* MS Saga: a GIF transfer waiting for path 3 to be unmasked */
+
+int dmac_gif_held(void) { return __atomic_load_n(&gif_held, __ATOMIC_ACQUIRE); }
+
+/* VIF1 unmasked path 3 (MSKPATH3 0): the GIF transfer held back runs now, on the thread VIF1 is on. */
+void dmac_path3_unmasked(void) {
+    if (!__atomic_exchange_n(&gif_held, 0, __ATOMIC_ACQ_REL)) return;
+    if (want_dma_log()) rt_log("dma", "ch2 released: path 3 unmasked");
+    transfer(NULL, 2);
+    finish(2);
+}
+
 static void start(Ctx *c, int ch) {
     u32 *r = reg[ch];
     if (want_dma_log()) rt_log("dma", "ch%d start CHCR %08X MADR %08X QWC %X TADR %08X", ch, r[0], r[0x10 / 4], r[0x20 / 4], r[0x30 / 4]);
@@ -275,6 +301,16 @@ static void start(Ctx *c, int ch) {
     }
     (void)mod;
     gs_thread_start();
+    if (ch == 2 && gif_path3_masked) {
+        /* MS Saga: GIF (path 3) while VIF1 has path 3 masked: on the PS2 the data waits in the GIF FIFO until
+         * VIF1 unmasks it (MSKPATH3 0 in the channel 1 chain the game starts next); RenderWare starts it, waits
+         * for GIF_STAT.FQC to show it waiting, then starts that chain. It runs at the unmask
+         * (dmac_path3_unmasked), after the draws queued before it. Running it at once made FQC read 0 when the
+         * GS thread was quick: a deadlock in RenderWare's DMA handler (1 run in 5 froze on the logos). */
+        __atomic_store_n(&gif_held, 1, __ATOMIC_RELEASE);
+        if (want_dma_log()) rt_log("dma", "ch2 held: path 3 masked");
+        return;
+    }
     if (async && (ch == 1 || ch == 2)) { queue_transfer(ch); return; }
     transfer(c, ch);
     finish(ch);

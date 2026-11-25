@@ -571,21 +571,24 @@ u32 kernel_vblank_count(void);
 static void frame_log(void) {
     static FILE *f;
     static int on = -1;
-    static u64 t0, vu0, vi0, gs0, jq0, jc0, pp0, pn0, lk0, ln0, hp0;
+    static u64 t0, vu0, vi0, gs0, jq0, jc0, pp0, pn0, lk0, ln0, hp0, pr0, vr0, kk0;
     if (on < 0) {
         const char *path = getenv("MSSAGA_FRAME_LOG");
         on = path && (f = fopen(path, "w"));
-        if (on) fprintf(f, "vblank,ms,vu_ms,vu_interp_ms,gs_ms,jit_queued,jit_cached,pipes,pipe_ms,lookups,lookup_ms,hops\n");
+        if (on) fprintf(f, "vblank,ms,vu_ms,vu_interp_ms,gs_ms,jit_queued,jit_cached,pipes,pipe_ms,lookups,lookup_ms,hops,"
+                           "prims,vu1_runs,kicks\n");
     }
     if (!on) return;
     u64 now = perf_now();
     if (t0)
-        fprintf(f, "%u,%.2f,%.2f,%.2f,%.2f,%llu,%llu,%llu,%.2f,%llu,%.2f,%llu\n", kernel_vblank_count(), (now - t0) / 1e6,
+        fprintf(f, "%u,%.2f,%.2f,%.2f,%.2f,%llu,%llu,%llu,%.2f,%llu,%.2f,%llu,%llu,%llu,%llu\n", kernel_vblank_count(), (now - t0) / 1e6,
                 (perf.vu_ns - vu0) / 1e6, (perf.vu_interp_ns - vi0) / 1e6, (perf.gs_ns - gs0) / 1e6,
                 (unsigned long long)(perf.jit_queued - jq0), (unsigned long long)(perf.jit_cached - jc0),
                 (unsigned long long)(perf.pipes - pp0), (perf.pipe_ns - pn0) / 1e6,
                 (unsigned long long)(perf.jit_lookups - lk0), (perf.jit_lookup_ns - ln0) / 1e6,
-                (unsigned long long)(perf.jit_hops - hp0));
+                (unsigned long long)(perf.jit_hops - hp0), (unsigned long long)(perf.prims - pr0),
+                (unsigned long long)(perf.vu1_runs - vr0), (unsigned long long)(perf.kicks - kk0));
+    pr0 = perf.prims; vr0 = perf.vu1_runs; kk0 = perf.kicks;
     t0 = now; vu0 = perf.vu_ns; vi0 = perf.vu_interp_ns; gs0 = perf.gs_ns;
     jq0 = perf.jit_queued; jc0 = perf.jit_cached; pp0 = perf.pipes; pn0 = perf.pipe_ns;
     lk0 = perf.jit_lookups; ln0 = perf.jit_lookup_ns; hp0 = perf.jit_hops;
@@ -1675,6 +1678,7 @@ void gif_path1(const u8 *vu_mem, u32 addr) {
     }
     paths[0].tag_lo = 0;
     paths[0].loops = 0;
+    perf.kicks++;
     u64 t = perf_stamp();
     /* in place; a packet that runs past the end of VU memory goes on from its start */
     if (gif(&paths[0], vu_mem + a, (0x4000 - a) / 16, 1) == (0x4000 - a) / 16 && a) gif(&paths[0], vu_mem, a / 16, 1);
