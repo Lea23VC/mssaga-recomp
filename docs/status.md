@@ -1,5 +1,16 @@
 # Status
 
+## 60 fps: an experiment, parked (2026-11-25)
+
+The game holds itself at 30 fps twice: RenderWare's minimum of 2 vertical blanks per frame (`B3D_VsyncCntSet(2)` →
+`_rwDMAMinVsyncCntSet`, byte D_003C941C) and its task scheduler, which wakes the main loop every 2 vertical blanks
+(`SYS_VsyncWakeUp(2)` from 0x1006BC, D_00442CC8). `port/hle/fps.c` replaces both setters; `MSSAGA_FPS=60` makes them
+1 and the game runs at 60 (16.8 ms per frame here). B3D_Main measures each frame's length (D_0044312C, read through
+B3D_GetVSyncInterval in ~50 places of bmap/tmap/sento), but played by hand nearly everything ran twice as fast, and
+the battle theme (ADX, the same voice as the field music) didn't start. So most of the game counts frames: real
+60 fps would mean keeping the logic at 30 and making the frames in between (interpolating cameras and objects), a
+big job. Default stays 30; `MSSAGA_FPS=60` is kept as the experiment's switch.
+
 ## Widescreen 16:9 (2026-11-25)
 
 `port/hle/widescreen.c` replaces RenderWare's `RwCameraSetViewWindow` (0x1B8B58): with 16:9 on, the view window's

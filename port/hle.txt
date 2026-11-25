@@ -56,3 +56,7 @@
 
 # Widescreen: every camera's field of view, 4/3 wider when 16:9 is on (port/hle/widescreen.c)
 0x001B8B58 hle_RwCameraSetViewWindow
+
+# Frame rate: RenderWare's minimum vertical blanks per frame (port/hle/fps.c)
+0x001C73E8 hle_rwDMAMinVsyncCntSet
+0x0010F158 hle_SYS_VsyncWakeUp
