@@ -1,5 +1,42 @@
 # Status
 
+## Milestone 2 — boots to the first block (2026-11-24)
+
+`./build.sh` now also links `build/mssaga` (runtime, kernel and IOP services from SaintSeiyaRecomp, MIT).
+`./build/mssaga [--iso disc/game.iso] [-v|-vv] [--trace]` runs, with no window, sound or picture yet:
+
+1. crt0, `SetupThread`/`SetupHeap`, libkernl's `SetSyscall` patches, the IOP reboot (`IOPRP280.IMG`) and all 12
+   modules "loaded" (`LoadModule` is answered; nothing runs on the IOP).
+2. Pads opened (none connected), memory card server, libsd, the sound driver `RPGSND` (server 0x7073,
+   `port/iop/rpgsnd.c`, stub), CRI ADX's threads and its IOP half (`port/iop/cri_adxi.c`, no audio device).
+3. The disc: `sceCdSearchFile`/`sceCdLayerSearchFile` find `\0FLISTDV.DIR` and `\AFSLIST0.AFS` in the ISO
+   (`port/hle/cdvd.c` + `port/hle.txt`, 13 replaced functions).
+4. ~200 vertical blanks (4 s) later RenderWare starts: `SetGsCrt(interlaced, NTSC)`, GS registers, DMA
+   handlers, VIF1/GIF transfers (not carried out: `port/stubs.c`). Why the wait is that long is unknown.
+5. **First block: the DLLs.** `SYS_DLLMain` (called from `main`'s loop) loads `title_dll` at **0x516A80**, inside
+   `dll_buf` (0x516A00 in `.bss`), and `snDllLoaded` calls its `__do_global_ctors` (base + 0x16768). No translated
+   code exists there, so `rt_call` stops: `call to 0052D1E8, which is not a known function (from snDllLoaded)`.
+
+What was needed for MS Saga besides the reference's code: the `RPGSND` stub (`SND_Init` waits until functions
+0 and 0xE return non-zero), `sceCdLayerSearchFile` (CRI's file system uses it, not `sceCdSearchFile`), 8 MB of
+IOP memory in the HLE (the game allocates 256 KB sound buffers), and `cri_adxi.c` built without SDL3
+(`MSSAGA_SDL3` turns sound on; SDL3 is not installed in this WSL yet).
+
+### Where the DLLs go (measured)
+
+`dll_buf` is the last symbol in `.bss`, and `_end` is 0x115D000, so it is a 12.5 MB static pool (0x516A00 to
+0x115D000) that the game's `FIFO_*` allocator divides at run time. `title_dll` is the first block of it
+(+0x80). Other DLLs will land at addresses that depend on what was allocated before them. So option (a) from
+recon.md, fixed addresses, would need us to control the allocator. **Option (b) now looks better**: translate
+each DLL position-independently.
+
+- `snDllLoaded` runs as it is and applies the relocations in guest memory, so data (jump tables, vtables) is
+  right without help.
+- The translated code adds the base where the relocation table says an address is built: HI16/LO16 pairs. R_MIPS_26
+  calls inside the DLL become direct C calls. Imports (symbol value 0) are resolved by name against the ELF's table.
+- When a DLL is loaded, its function table is registered at its base. Then `rt_call` maps a guest address back
+  to the right DLL function, and the 22 `jal 0` imports in the ELF (already read from memory) work.
+
 ## Milestone 1 — the executable translates and compiles (2026-11-24)
 
 `./build.sh` (needs `disc/SLUS_212.70`) runs four steps, all output in `build/` and `asm/` (ignored by git):
@@ -35,7 +72,8 @@ except `rt_cpcond0`. `port/runtime/r5900.h` is the reference's, with the additio
 
 ## Not done yet: the DLLs
 
-Most of the game is in the 11 SN DLLs inside the AFS (docs/recon.md), and they are not translated yet. Plan:
+Most of the game is in the 11 SN DLLs inside the AFS (docs/recon.md), and they are not translated yet. First plan
+(written before measuring; see milestone 2 above for the revised choice):
 
 1. A tool that extracts and decompresses them from the ISO at build time (`afs.py` + `sd0.py`, into `build/`).
 2. Measure where the game puts them (log `snDllLoaded`'s arguments once the core boots, or in PCSX2) and which

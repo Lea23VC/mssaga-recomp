@@ -25,9 +25,19 @@ mkdir -p build/obj
 $PY -I tools/symbols.py "$ELF" build/symbol_addrs.txt
 rm -rf asm
 $PY -m splat split config/slus_212.70.yaml > build/splat.log 2>&1 || { tail -20 build/splat.log; exit 1; }
-$PY tools/recomp/recomp.py "$ELF" build/recomp asm/text.s
+RECOMP_TABLE=game_functab $PY tools/recomp/recomp.py "$ELF" build/recomp asm/text.s
 
 CFLAGS="-O1 -g -w -fno-strict-aliasing -ffp-contract=off -march=x86-64-v2 -Iport/runtime -Ibuild/recomp"
 ls build/recomp/*.c | xargs -P"$(nproc)" -I{} sh -c \
     'o=build/obj/$(basename {} .c).o; gcc -c '"$CFLAGS"' {} -o $o || { echo "FAILED: {}"; exit 255; }'
 echo "compiled $(ls build/obj/*.o | wc -l) files into build/obj/"
+
+# the port: runtime, kernel, IOP services (warnings on), linked with the translated code -> build/mssaga
+PORT_CFLAGS="-O2 -g -Wall -Wextra -Wno-unused-parameter -fno-strict-aliasing -ffp-contract=off -march=x86-64-v2"
+PORT_INC="-Iport/runtime -Iport/kernel -Iport/iop -Iport/gs"
+mkdir -p build/port
+for src in port/*.c port/runtime/*.c port/kernel/*.c port/iop/*.c port/hle/*.c; do
+    gcc -c $PORT_CFLAGS $PORT_INC "$src" -o "build/port/$(echo "$src" | tr / _ | sed 's/\.c$/.o/')"
+done
+gcc -o build/mssaga build/port/*.o build/obj/*.o -lpthread -lm
+echo "linked build/mssaga"

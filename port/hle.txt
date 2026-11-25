@@ -1,0 +1,19 @@
+# Game functions replaced by native code (tools/recomp/recomp.py reads this file).
+#   <address> <native function>            the guest function is replaced
+#   <address> <native function> before     the native function runs first, then the guest code
+# Addresses of SLUS_212.70; the names are the executable's own (SNR1 table, docs/recon.md).
+
+# libcdvd (SDK 2.8) over the ISO image: port/hle/cdvd.c
+0x0013B718 hle_sceCdInit
+0x0013BDF8 hle_sceCdMmode
+0x0013BBF0 hle_sceCdDiskReady
+0x0013B350 hle_sceCdDiskReady       # sceCdNcmdDiskReady: answers the same
+0x0013B3E8 hle_sceCdSync
+0x0013B1C0 hle_sceCdSearchFile
+0x0025ED70 hle_sceCdRead
+0x0025F020 hle_sceCdGetError
+0x0025F0B8 hle_sceCdBreak
+0x0013AEA8 hle_sceCdSearchFile      # sceCdLayerSearchFile(fp, name, layer): CRI's DVCI uses it; one layer
+0x0013B488 hle_sceCdSync            # sceCdSyncS
+0x0013B9F8 hle_sceCdDiskReady       # sceCdDiskReady_old
+0x0025EF50 hle_sceCdSeek
