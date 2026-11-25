@@ -14,8 +14,9 @@
   went into one frame that grew without end (the "1 fps" counts sealed frames; `MSSAGA_FRAME_LOG` now also has
   prims, VU1 runs and XGKICKs per frame: the scene starts at a normal ~1,300 primitives and ~500 VU1 runs per frame).
   Fix (`gs.c` seal_locked): when the queue is full the oldest frame's draws are dropped and its texture frees and
-  uploads go to the front of the next frame. With the software GS (`MSSAGA_GS=sw`) the scene runs at 60 fps,
-  25,000-800,000 primitives/s. **Under WSL use `MSSAGA_GS=sw`**; real GPU speed needs a native Windows build.
+  uploads go to the front of the next frame. The game itself runs the scene at 30 fps (33.4 ms per frame in
+  `MSSAGA_FRAME_LOG`, ~30,000-40,000 primitives per frame on average, up to ~72,000); the software GS
+  (`MSSAGA_GS=sw`) keeps up with it (screenshots on time), llvmpipe doesn't. **Under WSL use `MSSAGA_GS=sw`**; real GPU speed needs a native Windows build.
 - Further: the game goes on to the first in-game scene (a walkway, dialogue "Tristan: Yeah... The G System's really
   something..."). Suspicion: Tristan's close-up shows mostly big pink shapes (her hair): skinned models
   (RenderWare skin2) may be drawn with wrong matrices. To look at next.
@@ -36,7 +37,7 @@ movie for real (FFmpeg, like Saint Seiya's movie.c) is for later.
 - Speed: vblanks at 60 Hz, the game at 30 fps in the menus (its own rate, it seems; to compare with PCSX2).
 - The first time 3D code runs, its VU1 programs are interpreted until gcc has compiled them (cached in
   `~/.cache/mssaga/vu`): that first run crawled for minutes. Next: compile them ahead of time in the build.
-- Suspicion: about 1 run in 5 froze on the Sofdec/ADX logo screen (main loop alive, nothing drawn). Not found yet.
+- About 1 run in 5 froze on the Sofdec/ADX logo screen: found and fixed (path 3, see above).
 - Tests: `MSSAGA_MEMCARD=$PWD/build/mc-test ./build/mssaga --press "1600:START,1800:DOWN,1900:CROSS,2200:START,2350:UP,2450:CROSS" --shot 2600`
   (NEW GAME with the default name; the "Begin with this name?" box defaults to No, hence UP).
 
