@@ -46,8 +46,14 @@ compile -O1 build/recomp/*.c build/dll/c/*.c
 compile -O2 build/vu/*.c                       # the game's VU1 programs (build.sh writes them; none at run time here)
 compile -O2 port/*.c port/runtime/*.c port/kernel/*.c port/iop/*.c port/hle/*.c port/gs/*.c port/iop/lle/*.c
 
-# the icon (tools/make_icon.py draws it), as a Windows resource
-python3 -I tools/make_icon.py build-win/obj/mssaga.ico
+# the icon (tools/make_icon.py draws it), as a Windows resource. MSSAGA_ICON=file.ico ./build-win.sh uses that one
+# instead, for a build of your own: don't publish one carrying art that isn't yours to share
+if [ -n "${MSSAGA_ICON:-}" ]; then
+    install -m 644 "$MSSAGA_ICON" build-win/obj/mssaga.ico
+    echo "icon: $MSSAGA_ICON"
+else
+    python3 -I tools/make_icon.py build-win/obj/mssaga.ico
+fi
 printf '1 ICON "mssaga.ico"\n' > build-win/obj/mssaga.rc
 (cd build-win/obj && x86_64-w64-mingw32-windres mssaga.rc -O coff -o mssaga_rc.res)
 
