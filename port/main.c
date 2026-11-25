@@ -3,6 +3,7 @@
  *
  *     mssaga [SLUS_212.70] [--iso game.iso] [-q | -v | -vv] [--trace]
  *            [--shot 300,600,...] [--press "1100:CROSS,..."]
+ *     mssaga --gen-vu dir       (the build) the game's VU1 programs as C into dir, then exit
  *
  * Loads the executable into guest RAM (its code is the recompiled C linked into this program; the image is still
  * needed for its data, and because the SN DLL loader patches instructions in it), and runs the main thread from
@@ -43,6 +44,7 @@ int display_shots(const int *at, int n);
 void display_set_presses(const char *spec);
 void prof_start(void);                    /* runtime/prof.c */
 void perf_calibrate(void);
+int vu_jit_generate(const char *dir);     /* gs/vu_jit.c */
 
 static u32 entry;
 
@@ -148,7 +150,7 @@ int main(int argc, char **argv) {
     /* SDL's SIGINT/SIGTERM handlers only queue a quit event, which --shot never reads: `timeout` and Ctrl+C
      * could not stop a test run. Keep the default signals (the window still closes with its close button). */
     SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
-    const char *elf = NULL, *iso = NULL;
+    const char *elf = NULL, *iso = NULL, *gen_vu = NULL;
     int shots[64], nshots = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "-q")) rt_verbose = 0;
@@ -156,6 +158,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "-vv")) rt_verbose = 3;
         else if (!strcmp(argv[i], "--trace")) rt_trace_on = 1;
         else if (!strcmp(argv[i], "--iso") && i + 1 < argc) iso = argv[++i];
+        else if (!strcmp(argv[i], "--gen-vu") && i + 1 < argc) gen_vu = argv[++i];
         else if (!strcmp(argv[i], "--press") && i + 1 < argc) display_set_presses(argv[++i]);
         else if (!strcmp(argv[i], "--shot") && i + 1 < argc) {
             for (char *p = argv[++i]; *p && nshots < 64; p++) {     /* --shot 300,600: vertical blanks */
@@ -168,6 +171,11 @@ int main(int argc, char **argv) {
     if (!elf && !(elf = find_file("disc/SLUS_212.70")))
         return fail("The game's executable (disc/SLUS_212.70) was not found next to the program.\n"
                     "Build the port again (it copies it there), or give its path on the command line.");
+    if (gen_vu) {                                 /* the build: only the executable is needed */
+        memory_init();
+        if (memory_load_elf(elf, &entry)) { fprintf(stderr, "cannot load %s\n", elf); return 1; }
+        return vu_jit_generate(gen_vu);
+    }
     if (!(iso = find_iso(iso)))
         return fail("No disc image was chosen. Start the program again, or give it with --iso <file>.");
     if (cdvd_open(iso)) {

@@ -1,0 +1,23 @@
+# VU1 programs to compile into the port (tools/../build.sh, port/gs/vu_jit.c): ids of the programs the game was seen
+# to start (a hash of the entry and the microcode it reaches; nothing from the game). Add to it by playing with
+# MSSAGA_VU_IDS=config/vu_programs.txt, then `sort -u` the ids. Programs not listed are compiled at run time on
+# Linux and interpreted on Windows.
+1d94429adc16977d
+233a35c14216c8d7
+516381c02157b735
+5bb2d2c6fbca0330
+67816c89bef4bd4d
+67944b94f9048039
+69003ef429f90b91
+836e1368a98a8f37
+8edaa873a37cd2f5
+a91a5dcd170f6e0d
+a9c82f62e4a5a0a9
+aba8b2353ef5d197
+afa0bbc8fbb976f8
+b7e065f34c0a33ae
+bd166ba92e2b8955
+c649bf01fa0ed5f9
+d24abeb72579dafc
+e2c5483f2b71916d
+e4a3dca15040cd18

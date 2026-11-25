@@ -16,7 +16,7 @@ CC=x86_64-w64-mingw32-gcc-posix
 SDL=tools/win/SDL3-3.2.30/x86_64-w64-mingw32
 command -v $CC >/dev/null || { echo "missing $CC: sudo apt install mingw-w64"; exit 1; }
 [ -d "$SDL" ] || { echo "missing $SDL: run tools/win_deps.sh"; exit 1; }
-[ -f build/recomp/functab.c ] && [ -f build/dll/c/dlls.c ] && [ -f build/shaders/shaders.h ] || {
+[ -f build/recomp/functab.c ] && [ -f build/dll/c/dlls.c ] && [ -f build/shaders/shaders.h ] && [ -f build/vu/vu_builtin.c ] || {
     echo "run ./build.sh first (it writes the translated C and the shaders)"; exit 1; }
 
 FLAGS="-fno-strict-aliasing -ffp-contract=off -march=x86-64-v2 -D_FILE_OFFSET_BITS=64"
@@ -30,6 +30,7 @@ compile() {   # opt, files...
         'o=build-win/obj/$(echo {} | tr / _ | sed "s/\.c$/.o/"); [ "$o" -nt {} ] || '"$CC"' -c '"$opt $FLAGS $INC"' -w {} -o "$o" || { echo "FAILED: {}"; exit 255; }'
 }
 compile -O1 build/recomp/*.c build/dll/c/*.c
+compile -O2 build/vu/*.c                       # the game's VU1 programs (build.sh writes them; none at run time here)
 compile -O2 port/*.c port/runtime/*.c port/kernel/*.c port/iop/*.c port/hle/*.c port/gs/*.c
 
 # console program for now (the log shows in its window); -mwindows would hide it

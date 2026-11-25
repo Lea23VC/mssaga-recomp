@@ -66,11 +66,11 @@ typedef int (*ProgFn)(Vu *v);
 /* The programs built into the executable (generated/vu/vu_builtin.c, sorted by key), weak: the first
  * stage of the build, which writes them, has none. */
 typedef struct { u64 key; ProgFn fn; } VuBuiltin;
-/* MS Saga: no programs are built in yet (the build doesn't write generated/vu), so the table is defined here, empty:
- * Windows (PE/COFF) can't link the reference's weak, undefined declarations. */
-static const VuBuiltin vu_builtin[1];
-static const int vu_builtin_count = 0;
-static const u64 vu_builtin_header_hash = 0;
+/* MS Saga: not weak (Windows' PE/COFF can't link weak undefined symbols): the build's first stage links an empty
+ * table (build/vu_empty.c, written by build.sh), the final executables the generated one (build/vu/vu_builtin.c). */
+extern const VuBuiltin vu_builtin[];
+extern const int vu_builtin_count;
+extern const u64 vu_builtin_header_hash;
 static int can_compile;         /* the sources (and so gcc) for programs not built in */
 
 static ProgFn builtin(u64 key) {
@@ -206,6 +206,62 @@ static u64 memory_hash(const u8 *code) {
     u64 r = header_hash;
     for (int k = 0; k < 4; k++) { r = (r ^ h[k]) * 0xC4CEB9FE1A85EC53ull; r ^= r >> 29; }
     return r;
+}
+
+/* MS Saga: a program's identity without the headers' hash and the generator's version (prog_key has both): the
+ * same program keeps it when the port's sources change. config/vu_programs.txt lists the ids of the programs the
+ * game was seen to start (MSSAGA_VU_IDS=file appends each new one as it is met); only those are built in, out of
+ * the ~2,500 places RenderWare's microcode could be entered (all of them made 815 MB of C). */
+static u64 prog_id(const u8 *code, u32 entry, const u8 *in) {
+    u64 h = (0xCBF29CE484222325ull ^ entry) * 0x100000001B3ull;
+    for (u32 p = 0; p < NPAIRS; p++)
+        if (in[p]) {
+            u64 w;
+            memcpy(&w, code + p * 8, 8);
+            h = (h ^ p) * 0x100000001B3ull;
+            h = (h ^ w) * 0x100000001B3ull;
+        }
+    return h;
+}
+
+/* A program met while playing: its id into MSSAGA_VU_IDS (a file), and the code memory it ran from into
+ * MSSAGA_VU_IMAGES (a folder: <id>.bin, the entry pair (u32) then the 16 KB). The build makes the listed programs
+ * from those images (some are put together in VU memory in ways the scan of .data doesn't find). The images are
+ * the game's microcode: they stay in build/, out of git. */
+static void note_id(u64 id, const u8 *code, u32 entry) {
+    static FILE *f;
+    static int on = -1;
+    if (on < 0) { const char *e = getenv("MSSAGA_VU_IDS"); on = e && (f = fopen(e, "a")); }
+    if (on) { fprintf(f, "%016llx\n", (unsigned long long)id); fflush(f); }
+    const char *dir = getenv("MSSAGA_VU_IMAGES");
+    if (dir) {
+        char path[PATH_MAX];
+        snprintf(path, sizeof path, "%s/%016llx.bin", dir, (unsigned long long)id);
+        FILE *img = fopen(path, "wb");
+        if (img) { fwrite(&entry, 4, 1, img); fwrite(code, 1, 0x4000, img); fclose(img); }
+    }
+}
+
+static u64 *wanted;                 /* the ids to build in (the build: MSSAGA_VU_PROGRAMS=config/vu_programs.txt) */
+static u32 nwanted;
+
+static void load_wanted(void) {
+    const char *path = getenv("MSSAGA_VU_PROGRAMS");
+    FILE *f = path ? fopen(path, "r") : NULL;
+    if (!f) return;
+    char line[64];
+    while (fgets(line, sizeof line, f)) {
+        unsigned long long id;
+        if (line[0] == '#' || sscanf(line, "%llx", &id) != 1) continue;
+        wanted = realloc(wanted, (nwanted + 1) * sizeof *wanted);
+        wanted[nwanted++] = id;
+    }
+    fclose(f);
+}
+
+static int is_wanted(u64 id) {
+    for (u32 i = 0; i < nwanted; i++) if (wanted[i] == id) return 1;
+    return 0;
 }
 
 static u64 prog_key(const u8 *code, u32 entry, const u8 *in) {
@@ -1112,6 +1168,7 @@ static ProgFn find(Vu *v) {
     p = *b;
     while (p && p->key != key) p = p->next;
     if (!p) {
+        note_id(prog_id(v->code, entry, in), v->code, entry);
         p = calloc(1, sizeof *p);
         p->key = key;
         p->entry = entry * 8;
@@ -1179,6 +1236,7 @@ int vu_jit_run(Vu *v) {
 
 /* ------------------------------------------------------------------------------- ahead of time
  *
+ * (MS Saga: the programs are found differently, see vu_jit_ahead; what follows describes Saint Seiya's layout.)
  * All the game's VU1 code is in its executable: DMA packets of MPGs at D_VU1_MICROCODE (0x3C6F80 in the European release). The first packet
  * is the resident part (from 0); each of the others is an overlay the game loads right after it.
  * For the resident part alone and with each overlay, the programs are taken from where they can
@@ -1186,14 +1244,10 @@ int vu_jit_run(Vu *v) {
  * where JALRs return, and the constants put in integer registers (where JR goes). Those not compiled yet are compiled in the background, after
  * the ones the game is waiting for. */
 
-/* MS Saga: not used yet (main does not call vu_jit_ahead): the game's ~90 VU1 programs are spread over .data
- * (0x28D2CC-0x385000, docs/recon.md), not in one block of packets like Saint Seiya's. They are compiled when first run. */
-#define MICROCODE_AT 0u
-#define MICROCODE_LEN 62848u
 
 /* Writes the MPGs of the DMA packet at pk into code[] (at base + their address); the end of what
  * was written (bytes), and the packet's size in *size. */
-static u32 packet_mpgs(const u8 *pk, u32 room, u8 *code, u32 base, u32 *size) {
+__attribute__((unused)) static u32 packet_mpgs(const u8 *pk, u32 room, u8 *code, u32 base, u32 *size) {
     u64 tag;
     memcpy(&tag, pk, 8);
     u32 nw = 2 + (u32)(tag & 0xFFFF) * 4, end = 0;
@@ -1259,6 +1313,7 @@ static u32 ahead_image(const u8 *code, u32 from, u32 to, u64 *seen, u32 nseen_ma
     for (u32 k = 0; k < ns; k++) {
         reach(code, starts[k], in);
         u64 key = prog_key(code, starts[k], in);
+        if (gen_file[0] && !is_wanted(prog_id(code, starts[k], in))) continue;   /* MS Saga: only the listed ones */
         u32 j = 0;
         while (j < *nseen && seen[j] != key) j++;
         if (j < *nseen || *nseen == nseen_max) continue;
@@ -1297,32 +1352,55 @@ static u32 ahead_image(const u8 *code, u32 from, u32 to, u64 *seen, u32 nseen_ma
     return queued;
 }
 
+/* MS Saga: the game's VU1 programs (RenderWare's) are MPG packets spread over .data (0x28D2CC-0x385000, docs/recon.md),
+ * not one block of DMA packets like Saint Seiya's. Each program is a chain of MPGs starting at VU address 0, each
+ * packet continuing where the one before ended (tools/recon/vu_scan.py finds the same ~90). An MPG code is at a word
+ * address of 8n + 4, so its microcode (64-bit pairs) is 8-aligned. Each chain is written into an empty code memory
+ * and its programs are taken from where they can start (ahead_image). */
+#define MS_DATA_FROM 0x00285300u
+#define MS_DATA_TO   0x00385080u
+
+static int mpg_code(u32 a, u32 *num, u32 *addr) {
+    u32 w;
+    memcpy(&w, rt_ram + a, 4);
+    if (((w >> 24) & 0x7F) != 0x4A) return 0;
+    *num = (w >> 16) & 0xFF ? (w >> 16) & 0xFF : 256;
+    *addr = w & 0xFFFF;
+    return *addr < 0x800;
+}
+
 /* Before the game starts (the program table is the game thread's afterwards). wait: until all
  * are compiled. How many programs there are, and in *queued how many are being compiled. */
 int vu_jit_ahead(int wait, int *queued) {
     *queued = 0;
     if (enabled < 0) enabled = setup();
     if (!enabled) return 0;
-    const u8 *pk = rt_ram + MICROCODE_AT;
     static u8 code[0x4000];
     static u64 seen[8192];
-    u32 nseen = 0, size;
-    memset(code, 0, sizeof code);
-    u32 base_end = packet_mpgs(pk, MICROCODE_LEN, code, 0, &size);
-    if (!base_end || base_end % 8) { rt_log("vujit", "no VU1 code at %08X", MICROCODE_AT); return 0; }
-    static u8 resident[0x4000];
-    memcpy(resident, code, sizeof resident);
-    *queued += (int)ahead_image(code, 0, base_end / 8, seen, 8192, &nseen);
-    int overlays = 0;
-    for (u32 off = size; off + 16 <= MICROCODE_LEN; off += size) {
-        memcpy(code, resident, sizeof code);
-        u32 end = packet_mpgs(pk + off, MICROCODE_LEN - off, code, base_end, &size);
-        if (!size) break;
-        if (end <= base_end) continue;
-        overlays++;
+    u32 nseen = 0, chains = 0;
+    for (u32 a = MS_DATA_FROM + 4; a + 4 <= MS_DATA_TO; a += 8) {
+        u32 num, addr;
+        if (!mpg_code(a, &num, &addr) || addr != 0) continue;
+        memset(code, 0, sizeof code);
+        u32 p = a, at = 0, end = 0, packets = 0;
+        for (;;) {
+            u32 bytes = num * 8;
+            if (at * 8 + bytes > 0x4000 || p + 4 + bytes > MS_DATA_TO) break;
+            memcpy(code + at * 8, rt_ram + p + 4, bytes);
+            end = at * 8 + bytes;
+            packets++;
+            u32 next = p + 4 + bytes, found = 0, n2 = 0, a2 = 0;
+            for (u32 q = next; q < next + 20 && q + 4 <= MS_DATA_TO; q += 4)
+                if (q % 8 == 4 && mpg_code(q, &n2, &a2) && a2 == at + num) { found = q; break; }
+            if (!found) break;
+            p = found; at = a2; num = n2;
+        }
+        if (end < 64) continue;                           /* too small to be a program: data that looked like an MPG */
+        chains++;
         *queued += (int)ahead_image(code, 0, end / 8, seen, 8192, &nseen);
+        a = p + num * 8;                                  /* after the chain: the loop adds 8, to its end + 4 */
     }
-    rt_log("vujit", "%u VU1 programs (resident code and %d overlays), %d to compile", nseen, overlays, *queued);
+    rt_log("vujit", "%u VU1 programs in %u chains of MPGs in .data, %d to compile", nseen, chains, *queued);
     if (wait)
         while (__atomic_load_n(&ahead_left, __ATOMIC_ACQUIRE) > 0) usleep(20000);
     return (int)nseen;
@@ -1342,16 +1420,46 @@ int vu_jit_generate(const char *dir) {
     for (int k = 0; k < GEN_FILES; k++) {
         snprintf(path, sizeof path, "%s/vu_%02d.c", dir, k);
         if (!(gen_file[k] = fopen(path, "w"))) { perror(path); return 1; }
-        fputs("/* generated by build/sstheh-stage1 --gen-vu (port/gs/vu_jit.c): the game's VU1 programs */\n", gen_file[k]);
+        fputs("/* generated by build/mssaga-stage1 --gen-vu (port/gs/vu_jit.c): the game's VU1 programs */\n", gen_file[k]);
     }
     int queued;
+    load_wanted();
+    rt_log("vujit", "%u programs listed to build in (MSSAGA_VU_PROGRAMS)", nwanted);
     vu_jit_ahead(0, &queued);
+    /* MS Saga: then the listed programs found in the images saved while playing (MSSAGA_VU_IMAGES) */
+    const char *idir = getenv("MSSAGA_VU_IMAGES");
+    DIR *dd = idir ? opendir(idir) : NULL;
+    u32 from_images = 0;
+    for (struct dirent *de; dd && (de = readdir(dd));) {
+        if (!strstr(de->d_name, ".bin")) continue;
+        char ipath[PATH_MAX];
+        snprintf(ipath, sizeof ipath, "%s/%s", idir, de->d_name);
+        FILE *img = fopen(ipath, "rb");
+        if (!img) continue;
+        static u8 icode[0x4000], iin[NPAIRS];
+        u32 entry = 0;
+        int ok = fread(&entry, 4, 1, img) == 1 && fread(icode, 1, sizeof icode, img) == sizeof icode && entry < NPAIRS;
+        fclose(img);
+        if (!ok) continue;
+        reach(icode, entry, iin);
+        if (!is_wanted(prog_id(icode, entry, iin))) continue;
+        u64 key = prog_key(icode, entry, iin);
+        u32 j = 0;
+        while (j < gen_n && gen_key[j] != key) j++;
+        if (j < gen_n) continue;                                   /* found by the scan already */
+        char *src = program_c(icode, entry, iin);
+        gen_write(src, key);
+        free(src);
+        from_images++;
+    }
+    if (dd) closedir(dd);
+    rt_log("vujit", "%u more from saved images (MSSAGA_VU_IMAGES)", from_images);
     for (int k = 0; k < GEN_FILES; k++) fclose(gen_file[k]);
     qsort(gen_key, gen_n, sizeof *gen_key, cmp_key);
     snprintf(path, sizeof path, "%s/vu_builtin.c", dir);
     FILE *f = fopen(path, "w");
     if (!f) { perror(path); return 1; }
-    fputs("/* generated by build/sstheh-stage1 --gen-vu (port/gs/vu_jit.c) */\n#include \"vu_internal.h\"\n\n", f);
+    fputs("/* generated by build/mssaga-stage1 --gen-vu (port/gs/vu_jit.c) */\n#include \"vu_internal.h\"\n\n", f);
     for (u32 i = 0; i < gen_n; i++) fprintf(f, "int vu_prog_%016llx(Vu *v);\n", (unsigned long long)gen_key[i]);
     fputs("\ntypedef struct { u64 key; int (*fn)(Vu *); } VuBuiltin;\nconst VuBuiltin vu_builtin[] = {\n", f);
     for (u32 i = 0; i < gen_n; i++) fprintf(f, "    {0x%016llxull, vu_prog_%016llx},\n", (unsigned long long)gen_key[i], (unsigned long long)gen_key[i]);

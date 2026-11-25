@@ -1,5 +1,21 @@
 # Status
 
+## VU1 programs built in: Windows at full speed (2026-11-25)
+
+The build compiles the game's VU1 programs into the executables (two stages in `build.sh`: `build/mssaga-stage1
+--gen-vu build/vu`, then the final link; `build-win.sh` compiles `build/vu` too). Only the programs the game was seen
+to start are built: their ids are in `config/vu_programs.txt` (hashes of entry + reachable microcode; nothing from
+the game). Building every place RenderWare's microcode can be entered gave ~2,500 programs and 815 MB of C, and
+compiling that ran WSL out of memory (VS Code crashed again). Of the 19 programs used up to the first dialogue,
+12 are found by scanning `.data` for MPG chains; the other 7 (the heavy ones) are made from code images saved while
+playing (`MSSAGA_VU_IMAGES=build/vu_images`, the game's microcode: in `build/`, never in git).
+
+Windows, NEW GAME script: 41.9 → **33.4 ms per frame (30 fps)**, VU1 35.7 → 7.3 ms, nothing interpreted.
+
+To add programs met later in the game: play with `MSSAGA_VU_IDS=build/vu_ids.txt MSSAGA_VU_IMAGES=build/vu_images`,
+append `sort -u build/vu_ids.txt` to `config/vu_programs.txt`, rebuild. A fresh clone needs such a run before the
+image-only programs are built in; until then they are compiled at run time (Linux) or interpreted (Windows).
+
 ## GPU renderer: models missing and flashing, fixed (2026-11-25)
 
 On Windows (the real GPU) models were missing (the GM showed only its glowing parts, Tristan only her hair), the
