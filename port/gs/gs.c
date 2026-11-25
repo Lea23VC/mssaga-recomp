@@ -461,6 +461,7 @@ u32 kernel_vblank_count(void);
 static void record(int ctx, int type, const Vertex *v);   /* GPU recording, below */
 extern int gpu_on;
 
+static int gs_cur_path;             /* GIF path of the data being interpreted (defined below) */
 /* MSSAGA_PRIMS=<vblank>: list the first 40 primitives drawn from that vertical blank on (tests) */
 static void prim_log(int ctx, int type) {
     static int want = -2;
@@ -469,8 +470,9 @@ static void prim_log(int ctx, int type) {
     if (want < 0 || (int)kernel_vblank_count() < want || shown >= 40) return;
     const Vertex *a = &gs.vtx[0], *b = &gs.vtx[gs.vcount ? gs.vcount - 1 : 0];
     /* MS Saga: MSSAGA_PRIMS_BIG=1 lists only primitives at least 200 pixels wide (full-screen effects) */
-    if (big < 0) big = getenv("MSSAGA_PRIMS_BIG") != NULL;
+    if (big < 0) big = getenv("MSSAGA_PRIMS_BIG") && atoi(getenv("MSSAGA_PRIMS_BIG"));
     if (big && (b->x > a->x ? b->x - a->x : a->x - b->x) < 200) return;
+    if (getenv("MSSAGA_PRIMS_EE") && gs_cur_path == 1) return;   /* MSSAGA_PRIMS_EE=1: only what the EE drew (paths 2/3) */
     shown++;
     u64 t0 = gs.tex0[ctx], fr = gs.frame[ctx];
     fprintf(stderr, "  [%u] prim %d ctx %d (%.1f,%.1f)-(%.1f,%.1f) z %08X rgba %02X%02X%02X%02X tme %d abe %d tex %04X psm %02X "
@@ -1245,6 +1247,18 @@ static void classify(GpuDraw *d, int type, u32 first) {
     d->flat2d = 0;
     if (gs_cur_path != 1 && type >= 3 && d->tex >= -1 && full_scissor)
         d->flat2d = d->textured || x0 > 0 || x1 < (float)fw;
+    /* MS Saga: the field clears its frame (colour, then depth) in 32-pixel strips of untextured sprites, the
+       whole frame high. Kept 4:3 each, they left the 16:9 sides uncleared (white, the 3D failing its depth test
+       there): a strip like that is a clear, it goes with the 3D. */
+    if (d->flat2d && !d->textured && type == 6) {
+        float y0 = 1e9f, y1 = -1e9f;
+        for (u32 i = first; i < rec->nverts; i++) {
+            if (rec->verts[i].y < y0) y0 = rec->verts[i].y;
+            if (rec->verts[i].y > y1) y1 = rec->verts[i].y;
+        }
+        float bottom = d->scissor[3] + 1 < 448 ? (float)(d->scissor[3] + 1) : 448.0f;   /* the PS2's picture height */
+        if (y0 <= (float)d->scissor[2] + 0.5f && y1 >= bottom - 0.5f) d->flat2d = 0;
+    }
     d->sides = !d->flat2d && (d->tex >= 0 || gs_cur_path == 1) && full_scissor && (x0 < fw / 8.0f || x1 > fw * 7 / 8.0f);
     int fight_on(void);                         /* port/hle/training.c */
     d->fight = d->flat2d && fight_on();

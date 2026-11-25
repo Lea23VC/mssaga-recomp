@@ -1,5 +1,21 @@
 # Status
 
+## Widescreen 16:9 (2026-11-25)
+
+`port/hle/widescreen.c` replaces RenderWare's `RwCameraSetViewWindow` (0x1B8B58): with 16:9 on, the view window's
+width is 4/3 larger (Hor+, the same change as nemesis2000's PCSX2 patch for SLUS-21270, which rewrites that function
+in place), so the projection and the frustum RenderWare culls with both see more at the sides. On by default with the
+GPU renderer; F2 switches it (kept in `~/.local/share/mssaga/widescreen`), `MSSAGA_WIDESCREEN=0/1` overrides. A
+camera picks up F2 when it next sets its window (the field camera does at load).
+
+The renderer's widescreen rules (from the reference: 2D kept 4:3 around the centre, 3D stretched) needed one change
+for this game: the field clears its frame (colour, then depth) in 32-pixel strips of untextured sprites, each taken
+for 2D and kept 4:3, so the 16:9 sides were never cleared (white, 3D failing its depth test there). An untextured
+sprite the whole picture high is now a clear and goes with the 3D (`classify` in gs.c). Checked at 1280x720
+(`MSSAGA_SHOT_PRESENT=1280x720`): title (2D kept 4:3, sides filled), the hangar and the forest path after it (3D
+across 16:9, HUD and minimap in shape). Battles in 16:9 not checked yet. `MSSAGA_PRIMS_EE=1` (with `MSSAGA_PRIMS`)
+lists only what the EE drew.
+
 ## Movies with FFmpeg (2026-11-25)
 
 The two Sofdec movies are AFS entries 25753 `gto_op.sfd` (the opening, 122.6 s) and 25754 `conp.sfd`: MPEG-2

@@ -8,8 +8,6 @@
 void heap_explain(const char *what, u32 addr) { (void)what; (void)addr; }
 
 
-/* 16:9 (Saint Seiya's port/hle/widescreen.c): later, from the camera code (PCSX2's widescreen patch) */
-int widescreen_on(void) { return 0; }
 
 /* texts drawn with a host font (Saint Seiya's port/hle/textfont.c): not for this game yet */
 int textfont_active(void) { return 0; }
@@ -24,4 +22,3 @@ u16 training_pad(u16 buttons) { return buttons; }
 int training_key(int scancode) { (void)scancode; return 0; }
 int training_hud(SDL_Surface *surf) { (void)surf; return 0; }
 int fight_on(void) { return 0; }
-void widescreen_toggle(void) {}
