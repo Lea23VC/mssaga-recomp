@@ -7,7 +7,8 @@
 #
 # Needs x86_64-w64-mingw32-gcc-posix (sudo apt install mingw-w64). build-win/ and tools/win/ stay out of git:
 # build-win/disc/ holds a copy of the executable from your disc. Run mssaga.bat from Windows: it passes the ISO's
-# Windows path (edit it if yours is elsewhere). Under Windows the GPU renderer uses the real graphics card.
+# Windows path (edit it if yours is elsewhere); mssaga.exe alone asks for the disc image once and remembers it.
+# Under Windows the GPU renderer uses the real graphics card.
 set -eu
 cd "$(dirname "$0")"
 
@@ -38,9 +39,11 @@ cp "$SDL/bin/SDL3.dll" build-win/
 install -m 644 disc/SLUS_212.70 build-win/disc/SLUS_212.70   # a writable copy (the original is read-only)
 cat > build-win/mssaga.bat <<'EOF'
 @echo off
-rem MS Saga: A New Dawn, native port. Edit the ISO path below if your disc image is elsewhere.
-cd /d "%~dp0"
+rem MS Saga: A New Dawn, native port. Optional: mssaga.exe alone asks for the disc image once and remembers it.
+rem pushd, not cd: cd can't enter a \\wsl.localhost\... folder (pushd maps it to a drive letter)
+pushd "%~dp0"
 mssaga.exe --iso "G:\Sistema\Usuarios\Leandro\Descargas\MS Saga - A New Dawn (USA)\MS Saga - A New Dawn (USA).iso" %*
+popd
 pause
 EOF
 echo "built build-win/mssaga.exe (run build-win\\mssaga.bat from Windows)"
