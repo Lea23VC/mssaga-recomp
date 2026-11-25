@@ -596,7 +596,30 @@ static void frame_log(void) {
 
 static void seal_locked(void) {
     frames_init();
-    if (!rec->ndraws || nsealed == NFRAMES || !nfree) return;
+    if (!rec->ndraws) return;
+    if (nsealed == NFRAMES || !nfree) {
+        /* MS Saga: the GPU side is behind (llvmpipe under WSL draws on the CPU) and every finished frame is still
+         * queued. Before, the frame being recorded then grew without end: every later draw went into it (millions of
+         * primitives, gigabytes, "1 fps"). Now the oldest finished frame's draws are dropped (frames are skipped,
+         * the newest shown); its texture frees and uploads go to the front of the next frame's, which may need them. */
+        if (!nsealed) return;
+        GpuFrame *old = sealed[0];
+        memmove(sealed, sealed + 1, (size_t)--nsealed * sizeof *sealed);
+        GpuFrame *to = nsealed ? sealed[0] : rec;
+        while (to->cap_frees < to->nfrees + old->nfrees) GROW(to->frees, to->cap_frees, to->cap_frees, u32);
+        memmove(to->frees + old->nfrees, to->frees, (size_t)to->nfrees * sizeof *to->frees);
+        memcpy(to->frees, old->frees, (size_t)old->nfrees * sizeof *to->frees);
+        to->nfrees += old->nfrees;
+        while (to->cap_uploads < to->nuploads + old->nuploads) GROW(to->uploads, to->cap_uploads, to->cap_uploads, GpuTexUpload);
+        memmove(to->uploads + old->nuploads, to->uploads, (size_t)to->nuploads * sizeof *to->uploads);
+        memcpy(to->uploads, old->uploads, (size_t)old->nuploads * sizeof *to->uploads);   /* their pixels move too */
+        to->nuploads += old->nuploads;
+        old->ndraws = old->nverts = old->nuploads = old->nfrees = 0;
+        free_frames[nfree++] = old;
+        static u32 dropped;
+        if ((++dropped & 1023) == 1) rt_log("gpu", "the GPU is behind: %u frames dropped", dropped);
+        if (to == rec) return;                     /* nothing queued: keep recording into this frame */
+    }
     frame_log();
     static const u32 regs[5] = {0x0000, 0x0070, 0x0080, 0x0090, 0x00A0};
     for (int k = 0; k < 5; k++) rec->priv[k] = gs_priv_read(regs[k]);

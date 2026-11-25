@@ -7,10 +7,18 @@
   starting the channel-1 chain that unmasks it. The port ran the upload at once; when the renderer thread was quick,
   FQC read 0 forever, inside an interrupt handler. Now a channel-2 transfer started while path 3 is masked is held
   (FQC reports it) and runs when VIF1 executes MSKPATH3 0, where the PS2 would run it (`port/gs/dmac.c`). 12/12 runs ok.
-- **After the prologue the first 3D scene renders** (a hangar with a mobile suit, `bmap` + `sub`), but at ~1 fps:
-  ~1 million primitives per frame from a normal-sized DMA chain (~290 tags, 59,000 quadwords), with the interpreter
-  as with the JIT; the primitives look sane (textured strips), so something repeats them. Memory grows with them
-  (5 GB of mappings: in WSL's 5.9 GB this took VS Code down). Next: count VU1 runs and XGKICKs per frame.
+- **After the prologue the first 3D scene renders** (a hangar with a mobile suit, `bmap` + `sub`). It seemed to run
+  at ~1 fps with ~1 million primitives per frame and memory growing to 5 GB (in WSL's 5.9 GB this took VS Code down).
+  **Cause: the GPU renderer's frame queue, not the game.** Under WSL Vulkan is llvmpipe (Mesa on the CPU); it fell
+  behind, the queue of finished frames filled, and a frame is only sealed when there is room, so every later draw
+  went into one frame that grew without end (the "1 fps" counts sealed frames; `MSSAGA_FRAME_LOG` now also has
+  prims, VU1 runs and XGKICKs per frame: the scene starts at a normal ~1,300 primitives and ~500 VU1 runs per frame).
+  Fix (`gs.c` seal_locked): when the queue is full the oldest frame's draws are dropped and its texture frees and
+  uploads go to the front of the next frame. With the software GS (`MSSAGA_GS=sw`) the scene runs at 60 fps,
+  25,000-800,000 primitives/s. **Under WSL use `MSSAGA_GS=sw`**; real GPU speed needs a native Windows build.
+- Further: the game goes on to the first in-game scene (a walkway, dialogue "Tristan: Yeah... The G System's really
+  something..."). Suspicion: Tristan's close-up shows mostly big pink shapes (her hair): skinned models
+  (RenderWare skin2) may be drawn with wrong matrices. To look at next.
 - Tools: a watchdog in the vblank timer (no vblank for 5 s: the stuck thread's registers and stack;
   `MSSAGA_WATCHDOG=0` off), `MSSAGA_FIFO_LOG=1` (VIF1 FIFO writes, MSKPATH3), chain sizes in `MSSAGA_DMA_LOG`,
   `tools/sheet.py` (screenshots side by side). SDL no longer swallows SIGTERM/SIGINT, so `timeout` stops a run.
