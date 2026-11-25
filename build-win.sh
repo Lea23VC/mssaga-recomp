@@ -19,7 +19,7 @@ command -v $CC >/dev/null || { echo "missing $CC: sudo apt install mingw-w64"; e
 [ -f build/recomp/functab.c ] && [ -f build/dll/c/dlls.c ] && [ -f build/shaders/shaders.h ] && [ -f build/vu/vu_builtin.c ] || {
     echo "run ./build.sh first (it writes the translated C and the shaders)"; exit 1; }
 
-FLAGS="-fno-strict-aliasing -ffp-contract=off -march=x86-64-v2 -D_FILE_OFFSET_BITS=64"
+FLAGS="-fno-strict-aliasing -ffp-contract=off -march=x86-64-v2 -D_FILE_OFFSET_BITS=64 -DMSSAGA_SDL3"   # sound through SDL
 INC="-Iport/runtime -Iport/kernel -Iport/iop -Iport/gs -Ibuild/recomp -Ibuild/dll/c -Ibuild/shaders -I$SDL/include"
 mkdir -p build-win/obj build-win/disc
 

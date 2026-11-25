@@ -64,7 +64,7 @@ $PY -I tools/spv2h.py build/shaders/shaders.h build/shaders/*.spv
 
 # the port: runtime, kernel, IOP services, renderer (warnings on), linked with the translated code -> build/mssaga
 SDL_CFLAGS=$(pkg-config --cflags sdl3) SDL_LIBS=$(pkg-config --libs sdl3) || { echo "SDL3 not found (pkg-config sdl3)"; exit 1; }
-PORT_CFLAGS="-O2 -g -Wall -Wextra -Wno-unused-parameter -fno-strict-aliasing -ffp-contract=off -march=x86-64-v2 -D_FILE_OFFSET_BITS=64"
+PORT_CFLAGS="-O2 -g -Wall -Wextra -Wno-unused-parameter -fno-strict-aliasing -ffp-contract=off -march=x86-64-v2 -D_FILE_OFFSET_BITS=64 -DMSSAGA_SDL3"   # MSSAGA_SDL3: sound through SDL (port/iop/cri_adxi.c)
 PORT_INC="-Iport/runtime -Iport/kernel -Iport/iop -Iport/gs -Ibuild/shaders $SDL_CFLAGS"
 rm -rf build/port && mkdir -p build/port
 for src in port/*.c port/runtime/*.c port/kernel/*.c port/iop/*.c port/hle/*.c port/gs/*.c; do

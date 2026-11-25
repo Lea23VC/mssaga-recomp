@@ -1,5 +1,5 @@
 /* From SaintSeiyaRecomp port/iop/cri_adxi.c (MIT, Copyright (c) 2026 Matheus Nunes Pereira;
- * licenses/SaintSeiyaRecomp-MIT.txt). MS Saga: the SDL3 output is behind MSSAGA_SDL3 (off until milestone 6:
+ * licenses/SaintSeiyaRecomp-MIT.txt). MS Saga: the SDL3 output is behind MSSAGA_SDL3 (the build scripts define it; without:
  * the streams are drained in real time as if played); no sound driver or movie audio is mixed in yet. */
 /*
  * CRI_ADXI.IRX: the IOP half of CRI's PS2 sound output (PS2RNA), server 0x90000200.

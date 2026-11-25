@@ -1,5 +1,17 @@
 # Status
 
+## Sound, first part: CRI ADX through SDL (2026-11-25)
+
+The build scripts define `MSSAGA_SDL3`, so `port/iop/cri_adxi.c` plays CRI's PS2RNA voices through SDL (48 kHz). The
+game creates one voice at the title (vblank ~692) and plays music through it: a recording of the NEW GAME script
+(`SDL_AUDIO_DRIVER=dummy MSSAGA_AUDIO_DUMP=build/audio.wav`) has music for the title (~31 s, peaks ~20,000), silence
+around NEW GAME / the name entry, then music again from the prologue. Not checked by ear yet (pitch, which track).
+Not done: the game's own driver `RPGSND` (+ Sony's MODHSYN/MODMIDI: sound effects and maybe some music) is still a
+stub, and the movies' sound. Tests: use `SDL_AUDIO_DRIVER=dummy` so test runs stay silent.
+
+Moved to CachyOS (16 GB, RTX 3070, native Vulkan): the GPU renderer is fast here too (33.4 ms per frame, the game's
+30 fps; GS 2.0 ms). MinGW isn't installed on this machine yet (`pacman -S mingw-w64-gcc` for `build-win.sh`).
+
 ## VU1 programs built in: Windows at full speed (2026-11-25)
 
 The build compiles the game's VU1 programs into the executables (two stages in `build.sh`: `build/mssaga-stage1
