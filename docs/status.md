@@ -1,5 +1,17 @@
 # Status
 
+## First battle, first save (2026-11-25)
+
+Played on CachyOS (by hand): NEW GAME → the hangar → down the hallway on the left → the first battle (DLL `sento`,
+vblank ~8000) → played to the end → back to the field (`bmap` again) → **saved to the memory card**
+(`BASLUS-21270G0000`, `pad.bin`, `icon.sys`, `user.ico` in `~/.local/share/mssaga/memcard1`). No errors, no
+unimplemented functions. 8 VU1 programs met there were new; added to `config/vu_programs.txt` (now 27 ids), so
+battles run fully native on Windows too.
+
+Scripted tests: `--press` now takes the left stick (`N:LLEFT:len`, `LUP`, `LDOWN`, `LRIGHT`). START / TRIANGLE skip
+cutscenes. Holding LLEFT from the GM's first position didn't reach the hallway in a script (it only turned); a copy of
+the save (`build/mc-battle`, never in git) is the way to start tests near battles.
+
 ## Sound, second part: sound effects, the game's driver run as it is (2026-11-25)
 
 `SDRDRV.IRX` (libsd for the EE, sid 0x80000701), `MODHSYN.IRX` (Sony's synthesizer) and `RPGSND.IRX` (the game's

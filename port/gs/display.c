@@ -40,8 +40,8 @@ static u32 frame[1024 * 1024];
 static u32 render_frames;               /* pictures shown (GPU window), for the panel */
 
 /* --press 600:CROSS,700:START,800:DOWN:20: press a button at those times for 6 vertical blanks, or for
-   the given number (tests) */
-typedef struct { int at, len; u16 btn; } Press;
+   the given number (tests). LUP / LDOWN / LLEFT / LRIGHT push the left stick all the way. */
+typedef struct { int at, len; u16 btn; s8 lx, ly; } Press;
 static Press presses[4096];
 static int npresses;
 
@@ -61,8 +61,33 @@ void display_set_presses(const char *spec) {
         if (len) *len++ = 0;
         for (size_t i = 0; i < sizeof button_names / sizeof *button_names; i++)
             if (!strcmp(colon + 1, button_names[i].name))
-                presses[npresses++] = (Press){atoi(tok), len ? atoi(len) : 6, button_names[i].bit};
+                presses[npresses++] = (Press){atoi(tok), len ? atoi(len) : 6, button_names[i].bit, 0, 0};
+        static const struct { const char *name; s8 lx, ly; } sticks[] = {
+            {"LUP", 0, -1}, {"LDOWN", 0, 1}, {"LLEFT", -1, 0}, {"LRIGHT", 1, 0}};
+        for (size_t i = 0; i < sizeof sticks / sizeof *sticks && npresses < (int)(sizeof presses / sizeof *presses); i++)
+            if (!strcmp(colon + 1, sticks[i].name))
+                presses[npresses++] = (Press){atoi(tok), len ? atoi(len) : 6, 0, sticks[i].lx, sticks[i].ly};
     }
+}
+
+/* the scripted left stick, if any is pushed now */
+static void scripted_stick(u32 vb) {
+    static int was;
+    int lx = 0, ly = 0, any = 0;
+    for (int i = 0; i < npresses; i++)
+        if ((presses[i].lx || presses[i].ly) && (int)vb >= presses[i].at && (int)vb < presses[i].at + presses[i].len) {
+            lx += presses[i].lx;
+            ly += presses[i].ly;
+            any = 1;
+        }
+    if (!any) {
+        if (was) pad_sticks[0][2] = pad_sticks[0][3] = 0x80;        /* let go */
+        was = 0;
+        return;
+    }
+    was = 1;
+    pad_sticks[0][2] = lx < 0 ? 0x00 : lx > 0 ? 0xFF : 0x80;
+    pad_sticks[0][3] = ly < 0 ? 0x00 : ly > 0 ? 0xFF : 0x80;
 }
 
 static u16 scripted(u32 vb) {
@@ -145,6 +170,7 @@ void gpu_set_hud(const u32 *px, int w, int h);      /* gpu_vk.c */
 
 static void poll_pads(void) {
     pad_buttons[0] = training_pad(keyboard() | gamepad_buttons(0) | scripted(kernel_vblank_count()));
+    scripted_stick(kernel_vblank_count());
     pad_buttons[1] = gamepad_buttons(1);
 }
 static u32 crt_interlace, crt_mode, crt_field;
@@ -231,6 +257,7 @@ int display_shots(const int *at, int n) {
         u32 seen = 0;
         while ((int)kernel_vblank_count() < at[k]) {
             pad_buttons[0] = training_pad(scripted(kernel_vblank_count()));
+            scripted_stick(kernel_vblank_count());
             if (kernel_vblank_count() != seen) { seen = kernel_vblank_count(); panel_update(); hud_update(); gpu_vblank(); }
             usleep(2000);
         }
