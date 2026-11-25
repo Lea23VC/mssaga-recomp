@@ -7,8 +7,6 @@
 /* crash reports: no heap bookkeeping yet (Saint Seiya's port/hle/heap.c knows its game's allocator) */
 void heap_explain(const char *what, u32 addr) { (void)what; (void)addr; }
 
-/* the opening video (Sofdec .sfd; Saint Seiya's port/hle/movie.c plays it with FFmpeg): none yet */
-int movie_take(u32 *out, int max, int *w, int *h, u32 *gen) { (void)out; (void)max; (void)w; (void)h; (void)gen; return 0; }
 
 /* 16:9 (Saint Seiya's port/hle/widescreen.c): later, from the camera code (PCSX2's widescreen patch) */
 int widescreen_on(void) { return 0; }
