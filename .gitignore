@@ -16,6 +16,7 @@ vram_*
 
 # Generated / local
 asm/
+include/
 assets/
 build/
 .venv/

@@ -59,6 +59,11 @@ Other references worth reading when stuck (not cloned by default):
 6. Sound (CRI ADX first, then RPGSND/MIDI) and controller, memory card.
 7. Playable start to end. Then: widescreen, higher resolution, 60 fps where it makes sense.
 
+## Commands
+
+- `./build.sh`: symbols → splat → `tools/recomp/recomp.py` → gcc, all into `build/` (needs `disc/SLUS_212.70`).
+  Progress and what's next: `docs/status.md`.
+
 ## Environment
 
 - Developed in **WSL2 Ubuntu** on Windows. Work inside the Linux filesystem (`~/`), not `/mnt/g`, for speed.

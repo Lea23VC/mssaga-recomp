@@ -1,0 +1,62 @@
+# splat configuration for MS Saga: A New Dawn (USA), SLUS_212.70
+# sha1 b23d39e5520047ca2a14c43d8f8ce36f1394764b (config/SLUS_212.70.sha1)
+#
+# Layout from the ELF's section headers (docs/recon.md): one PT_LOAD at file offset 0x1000 -> 0x100000.
+# Names come from the executable's own SN symbol table: build/symbol_addrs.txt, written by tools/symbols.py.
+name: SLUS_212.70
+sha1: b23d39e5520047ca2a14c43d8f8ce36f1394764b
+options:
+  basename: SLUS_212.70
+  target_path: disc/SLUS_212.70
+  base_path: ..
+  platform: ps2
+  compiler: EEGCC
+
+  asm_path: asm
+  src_path: src
+  build_path: build
+  ld_script_path: build/SLUS_212.70.ld
+
+  symbol_addrs_path: [build/symbol_addrs.txt]
+  undefined_funcs_auto_path: build/undefined_funcs_auto.txt
+  undefined_syms_auto_path: build/undefined_syms_auto.txt
+
+  gp_value: 0x3D0870
+  find_file_boundaries: False
+  create_undefined_funcs_auto: True
+  create_undefined_syms_auto: True
+  disasm_unknown: True
+  string_encoding: ASCII
+  rodata_string_guesser_level: 2
+  data_string_guesser_level: 2
+  named_regs_for_c_funcs: False
+  migrate_rodata_to_functions: False
+  section_order: [".text", ".data", ".rodata", ".sdata", ".sbss", ".bss"]
+  ld_bss_is_noload: True
+
+segments:
+  - name: elf_header
+    type: databin
+    start: 0x0
+
+  - name: main
+    type: code
+    start: 0x1000
+    vram: 0x100000
+    bss_size: 0x35D380         # .sbss 0x3C9680 + .bss, up to 0x726A00
+    subalign: null
+    subsegments:
+      - [0x1000,   asm, text]          # .text 0x100000-0x285290: crt0, game core, Sony, RenderWare 3.6, CRI
+      - [0x186290, data, data]         # 0x285290 padding, then .data 0x285300 (VU1 microcode, kernel-mode code)
+      - [0x286080, bin, sndata]        # .sndata 0x385080: SN SNR1 symbol table
+      - [0x2B4380, data, rodata]       # .rodata 0x3B3380 (+ padding)
+      - [0x2C9880, data, lit4]         # .lit4 0x3C8880
+      - [0x2C9E80, sdata, sdata]       # .sdata 0x3C8E80
+      - { start: 0x2CA62C, type: bss, vram: 0x3C9680, name: bss }
+
+  # .reginfo, the zero-filled .DVP.overlay sections, .shstrtab, section headers
+  - name: elf_tail
+    type: databin
+    start: 0x2CA62C
+
+  - [0x2CECE0]
