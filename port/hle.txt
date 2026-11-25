@@ -17,3 +17,6 @@
 0x0013B488 hle_sceCdSync            # sceCdSyncS
 0x0013B9F8 hle_sceCdDiskReady       # sceCdDiskReady_old
 0x0025EF50 hle_sceCdSeek
+
+# SN DLL loader: register the translated DLL at the base it is loaded at (port/hle/dll.c)
+0x00132318 hle_snDllLoaded before

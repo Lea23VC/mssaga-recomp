@@ -2,6 +2,7 @@
 """Static recompiler: translate every function of SLUS_212.70 from R5900 machine code to C.
 
     tools/recomp/recomp.py <elf> <out_dir> asm/*.s
+    tools/recomp/recomp.py --dll <name> <dll.bin> <out_dir> build/symbol_addrs.txt build/recomp/functab.h
 
 Adapted from SaintSeiyaRecomp's tools/recomp/recomp.py (MIT, Copyright (c) 2026 Matheus Nunes Pereira;
 licenses/SaintSeiyaRecomp-MIT.txt). Changes for MS Saga: the load address, file offset and data range are read
@@ -88,14 +89,19 @@ def sx16(v):
 
 
 class Gen:
-    def __init__(self, raw, funcs, ptrs):
+    def __init__(self, raw, funcs, ptrs, dll=None):
         self.raw = raw
+        # DLL mode (see translate_dll): dll = {"name", "relocs": {offset: (type, symbol name or None, addend)},
+        # "elf": {name: address}}. Addresses are then offsets from the DLL's base, known only at run time
+        # (DB, the variable the loader hook sets).
+        self.dll = dll
+        self.relocs = dll["relocs"] if dll else {}
         self.funcs = funcs
         self.starts = {a for a, _, _ in funcs}
         self.entries = collections.defaultdict(set)   # function start -> extra entry addresses
         self.hle = {}                                  # function start -> native replacement
         self.hooks = {}                                # function start -> native called on entry, then the guest code
-        for line in (open(HLE_LIST) if os.path.exists(HLE_LIST) else ()):
+        for line in (open(HLE_LIST) if os.path.exists(HLE_LIST) and not dll else ()):
             line = line.split("#", 1)[0].split()
             if len(line) == 2:
                 self.hle[int(line[0], 16)] = line[1]
@@ -119,7 +125,7 @@ class Gen:
             k = bisect.bisect_right(starts, p) - 1
             if k >= 0 and p < ends[starts[k]]:
                 self.entries[starts[k]].add(p)
-        entry = struct.unpack_from("<I", self.raw, 0x18)[0]       # ELF entry point
+        entry = struct.unpack_from("<I", self.raw, 0x18)[0] if not self.dll else self.funcs[0][0]  # ELF entry
         if entry not in self.starts:
             import bisect as _b
             k = _b.bisect_right(starts, entry) - 1
@@ -130,7 +136,9 @@ class Gen:
                 if ins.isBranch():
                     t = ins.getBranchVramGeneric()
                 elif ins.isJumpWithAddress():
-                    t = ins.getInstrIndexAsVram()
+                    t = self.jtarget(ins, start + 4 * i)
+                    if t is None:
+                        continue
                 else:
                     continue
                 if start <= t < start + size or t in self.starts:
@@ -141,7 +149,42 @@ class Gen:
         self.all_entries = self.starts | {e for es in self.entries.values() for e in es}
 
     def word(self, a):
+        if self.dll:
+            return struct.unpack_from("<I", self.raw, a)[0]
         return struct.unpack_from("<I", self.raw, ELF_OFF + a - BASE)[0]
+
+    def fn(self, a):
+        """C name of the function (or entry point) at a."""
+        return f"D_{self.dll['name']}_{a:06X}" if self.dll else f"{P}F_{a:08X}"
+
+    def bname(self, a):
+        return f"DB_{self.dll['name']}_{a:06X}" if self.dll else f"{P}B_{a:08X}"
+
+    def A(self, a):
+        """The guest address of a as a C expression: a constant in the ELF, base + offset in a DLL."""
+        return f"(DB + {a:#x}u)" if self.dll else f"{a:#x}"
+
+    def jtarget(self, ins, pc):
+        """Target of a j/jal, or None when it is not known before run time (a DLL import, `jal 0` in the ELF)."""
+        if not self.dll:
+            return ins.getInstrIndexAsVram()
+        r = self.relocs.get(pc)
+        if not r or r[0] != 4:
+            return ins.getInstrIndexAsVram()        # (no relocation: an absolute address, not expected)
+        if r[1] is None:
+            return r[2]                             # local: base + addend
+        return None
+
+    def import_call(self, pc):
+        """A call through a DLL import: straight to the ELF's function when the name is the ELF's, else to
+        whatever the loader wrote into the instruction (another DLL)."""
+        r = self.relocs[pc]
+        a = self.dll["elf"].get(r[1])
+        if a is not None and r[2] == 0:
+            self.report["DLL import from the ELF (direct call)"] += 1
+            return f"rt_call(c, {a:#x});" if a not in self.dll["elf_funcs"] else f"F_{a:08X}(c);"
+        self.report["DLL import from another DLL (target read from memory)"] += 1
+        return f"rt_call(c, (rd32(c, {self.A(pc)}) & 0x3FFFFFFu) << 2);"
 
     # register helpers -------------------------------------------------------------------------
     @staticmethod
@@ -162,8 +205,22 @@ class Gen:
         fs, ft, fd = rd, rt, sa
         imm = raw & 0xFFFF
         simm = sx16(imm)
-        ea = f"(RW({rs}) + {simm})"
         s32, s64 = self.set32, self.set64
+        rel = self.relocs.get(pc)
+        if rel and rel[0] in (5, 6):
+            # HI16 / LO16 in a DLL: the loader (snDllLoaded) has written the relocated immediate into the
+            # instruction in guest memory; read it back from there
+            word = f"rd32(c, {self.A(pc)})"
+            if op == "lui":
+                return s64(rt, f"(s64)(s32)({word} << 16)")
+            if op in ("ori", "andi", "xori"):
+                o = {"ori": "|", "andi": "&", "xori": "^"}[op]
+                return s64(rt, f"RD({rs}) {o} ({word} & 0xFFFF)")
+            simm = f"(s32)(s16){word}"
+            self.report["DLL relocated immediates (read from memory)"] += 1
+        elif rel and rel[0] != 4:
+            self.report[f"DLL relocation type {rel[0]} in code (ignored)"] += 1
+        ea = f"(RW({rs}) + {simm})"
 
         alu = {
             "addu": lambda: s32(rd, f"RW({rs}) + RW({rt})"),
@@ -289,11 +346,11 @@ class Gen:
             "cfc2": lambda: s64(rt, f"(s32)vu0_cfc2(c, {rd})"),
             "ctc2": lambda: f"vu0_ctc2(c, {rd}, RW({rt}));",
             # system
-            "syscall": lambda: f"rt_syscall(c, {pc:#x});",
+            "syscall": lambda: f"rt_syscall(c, {self.A(pc)});",
             # The SDK's kernel-mode helpers put the return address in ErrorEPC ($30) and eret to it.
             "eret": lambda: "return;",
-            "break": lambda: f"rt_break(c, {pc:#x});",
-            "teq": lambda: f"if (RD({rs}) == RD({rt})) rt_break(c, {pc:#x});",   # gcc's divide-by-zero trap
+            "break": lambda: f"rt_break(c, {self.A(pc)});",
+            "teq": lambda: f"if (RD({rs}) == RD({rt})) rt_break(c, {self.A(pc)});",   # gcc's divide-by-zero trap
             "mfc0": lambda: s64(rt, f"(s32)rt_mfc0(c, {rd})"),
             "mtc0": lambda: f"rt_mtc0(c, {rd}, RW({rt}));",
             "ei": lambda: "rt_ei(c);",
@@ -326,13 +383,13 @@ class Gen:
         if raw == 0:
             return ""
         self.report[f"unimplemented {op}"] += 1
-        return f"rt_unimpl(c, {pc:#x}, {raw:#010x});"
+        return f"rt_unimpl(c, {self.A(pc)}, {raw:#010x});"
 
     # one function -----------------------------------------------------------------------------
     def function(self, start, size, name):
         if start in self.hle:
             self.report["replaced by native functions (port/hle.txt)"] += 1
-            return f"void {P}F_{start:08X}(Ctx *c) {{ {self.hle[start]}(c); }} /* {name} */"
+            return f"void {self.fn(start)}(Ctx *c) {{ {self.hle[start]}(c); }} /* {name} */"
         end = start + size
         n = size // 4
         insns = [R.Instruction(self.word(start + 4 * i), vram=start + 4 * i, category=R.InstrCategory.R5900)
@@ -342,8 +399,8 @@ class Gen:
         for i, ins in enumerate(insns):
             pc = start + 4 * i
             if ins.isBranch() or (ins.isJump() and ins.isJumpWithAddress() and not ins.doesLink()):
-                t = ins.getBranchVramGeneric() if ins.isBranch() else ins.getInstrIndexAsVram()
-                if start <= t < end:
+                t = ins.getBranchVramGeneric() if ins.isBranch() else self.jtarget(ins, pc)
+                if t is not None and start <= t < end:
                     labels.add(t)
             if ins.getOpcodeName() == "jr" and (ins.getRaw() >> 21) & 31 != 31:
                 has_jr = True
@@ -353,13 +410,13 @@ class Gen:
         labels.update(extra)
 
         if extra:
-            out = [f"static void {P}B_{start:08X}(Ctx *c, u32 entry) {{ /* {name} */"]
-            out.append("ENTER(entry);")
+            out = [f"static void {self.bname(start)}(Ctx *c, u32 entry) {{ /* {name} */"]
+            out.append("ENTER(DB + entry);" if self.dll else "ENTER(entry);")
             if start in self.hooks:
                 out.append(f"if (entry == {start:#x}) {self.hooks[start]}(c);")
             out.append("switch (entry) { " + " ".join(f"case {e:#x}: goto L_{e:08X};" for e in extra) + " }")
         else:
-            out = [f"void {P}F_{start:08X}(Ctx *c) {{ /* {name} */", f"ENTER({start:#x});"]
+            out = [f"void {self.fn(start)}(Ctx *c) {{ /* {name} */", f"ENTER({self.A(start)});"]
             if start in self.hooks:
                 out.append(f"{self.hooks[start]}(c);")
         i = 0
@@ -372,7 +429,7 @@ class Gen:
                 delay = self.simple(insns[i + 1], pc + 4) if i + 1 < n else ""
                 if i + 1 < n and self.is_control(insns[i + 1]):
                     self.report["control instruction in delay slot"] += 1
-                    delay = f"rt_unimpl(c, {pc + 4:#x}, {insns[i + 1].getRaw():#010x});"
+                    delay = f"rt_unimpl(c, {self.A(pc + 4)}, {insns[i + 1].getRaw():#010x});"
                 out.append(self.control(ins, pc, delay, start, end, table))
                 if pc + 4 in labels:          # something jumps into the delay slot
                     out.append(f"if (0) {{ L_{pc + 4:08X}:; {delay} }}")
@@ -385,14 +442,14 @@ class Gen:
         prev = insns[-2] if n >= 2 else None
         if not (prev is not None and prev.hasDelaySlot() and self.ends_flow(prev)):
             if end in self.starts:
-                out.append(f"{P}F_{end:08X}(c); return;")
+                out.append(f"{self.fn(end)}(c); return;")
                 self.report["falls through into next function"] += 1
             else:
-                out.append(f"rt_fell_off(c, {end:#x});")
+                out.append(f"rt_fell_off(c, {self.A(end)});")
         out.append("}")
         if extra:
             for e in [start, *extra]:
-                out.append(f"void {P}F_{e:08X}(Ctx *c) {{ {P}B_{start:08X}(c, {e:#x}); }}")
+                out.append(f"void {self.fn(e)}(Ctx *c) {{ {self.bname(start)}(c, {e:#x}); }}")
         return "\n".join(l for l in out if l)
 
     def ptrs_in(self, lo, hi):
@@ -422,10 +479,10 @@ class Gen:
             return f"goto L_{target:08X};"
         if target in self.all_entries:
             self.report["branch/jump to another function (tail call)"] += 1
-            return f"{{ {P}F_{target:08X}(c); return; }}"
+            return f"{{ {self.fn(target)}(c); return; }}"
         self.report["branch into the middle of another function"] += 1
         self.notes.append(f"{start:08X}: branch to {target:08X}, not a function start")
-        return f"{{ rt_jump(c, {target:#x}); return; }}"
+        return f"{{ rt_jump(c, {self.A(target)}); return; }}"
 
     def control(self, ins, pc, delay, start, end, table):
         op = ins.getOpcodeName()
@@ -446,7 +503,7 @@ class Gen:
             base = op[:-1] if ins.isBranchLikely() else op
             if base in ("bltzal", "bgezal"):
                 self.report[f"unimplemented {op}"] += 1
-                return f"rt_unimpl(c, {pc:#x}, {raw:#010x});"
+                return f"rt_unimpl(c, {self.A(pc)}, {raw:#010x});"
             cond = conds[base]
             if cond == "RD(0) == RD(0)":
                 return f"{delay} {go}"
@@ -454,21 +511,26 @@ class Gen:
                 return f"if ({cond}) {{ {delay} {go} }}"
             return f"{{ int t = {cond}; {delay} if (t) {go} }}"
         if op == "j":
-            return f"{delay} {self.goto_or_call(ins.getInstrIndexAsVram(), start, end, pc)}"
+            target = self.jtarget(ins, pc)
+            if target is None:                       # tail call through a DLL import
+                return f"{delay} {{ {self.import_call(pc)} return; }}"
+            return f"{delay} {self.goto_or_call(target, start, end, pc)}"
         if op == "jal":
-            target = ins.getInstrIndexAsVram()
-            if target == DLL_IMPORT:
+            target = self.jtarget(ins, pc)
+            if target is None:
+                return f"SET64(31, {self.A(pc + 8)}); {delay} {self.import_call(pc)}"
+            if target == DLL_IMPORT and not self.dll:
                 # SN DLL import: the loader writes the real `jal` into memory, so read it back at run time
                 self.report["jal to a DLL import (target read from memory)"] += 1
                 return (f"SET64(31, {pc + 8:#x}); {delay} "
                         f"rt_call(c, (rd32(c, {pc:#x}) & 0x3FFFFFFu) << 2);")
-            call = f"{P}F_{target:08X}(c);" if target in self.all_entries else f"rt_call(c, {target:#x});"
+            call = f"{self.fn(target)}(c);" if target in self.all_entries else f"rt_call(c, {self.A(target)});"
             if target not in self.all_entries:
                 self.report["jal to a non-function address"] += 1
                 self.notes.append(f"{start:08X}: jal {target:08X}, not a function start")
-            return f"SET64(31, {pc + 8:#x}); {delay} {call}"
+            return f"SET64(31, {self.A(pc + 8)}); {delay} {call}"
         if op == "jalr":
-            link = f"SET64({rd}, {pc + 8:#x});" if rd else ""
+            link = f"SET64({rd}, {self.A(pc + 8)});" if rd else ""
             return f"{{ u32 t = RW({rs}); {link} {delay} rt_call(c, t); }}"
         if op == "jr":
             if rs == 31:
@@ -476,13 +538,139 @@ class Gen:
             cases = " ".join(f"case {t:#x}: goto L_{t:08X};" for t in table)
             if not cases:
                 self.report["jr to a register without jump-table targets"] += 1
-            return f"{{ u32 t = RW({rs}); {delay} switch (t) {{ {cases} default: rt_jump(c, t); return; }} }}"
+            sw = "t - DB" if self.dll else "t"
+            return f"{{ u32 t = RW({rs}); {delay} switch ({sw}) {{ {cases} default: rt_jump(c, t); return; }} }}"
         self.report[f"unimplemented control {op}"] += 1
-        return f"rt_unimpl(c, {pc:#x}, {raw:#010x});"
+        return f"rt_unimpl(c, {self.A(pc)}, {raw:#010x});"
+
+
+# ---------------------------------------------------------------------------------------------- DLLs
+
+def read_snr1(raw):
+    """An SN Systems DLL (decompressed .cmp from the AFS): header, symbols, relocations (docs/recon.md).
+    Header words: +4 relocations, +8 count, +0xC symbols, +0x10 count, +0x18 __do_global_ctors,
+    +0x1C __do_global_dtors, +0x20 total size. Symbol: {name offset, value, info}; value 0 = import.
+    Relocation: {offset, symbol index << 8 | MIPS type, addend} (RELA: the instruction's own field is 0)."""
+    magic, rel, nrel, sym, nsym = struct.unpack_from("<4sIIII", raw, 0)
+    assert magic == b"SNR1", magic
+    syms = []
+    for i in range(nsym):
+        name_at, value, _info = struct.unpack_from("<III", raw, sym + 12 * i)
+        syms.append((raw[name_at:raw.index(b"\0", name_at)].decode(), value))
+    relocs = {}
+    for i in range(nrel):
+        off, ti, addend = struct.unpack_from("<III", raw, rel + 12 * i)
+        k = ti >> 8
+        relocs[off] = (ti & 0xFF, None if k == 0 else syms[k][0], addend)
+    return syms, relocs, struct.unpack_from("<I", raw, 0x20)[0]
+
+
+def translate_dll(name, path, out_dir, elf_symbols, elf_functab_h):
+    import zlib
+    raw = open(path, "rb").read()
+    syms, relocs, total = read_snr1(raw)
+    # code: from 0x100 to the end of the last function (`jr $ra` + delay slot); data, tables after it
+    first = 0x100
+    n = struct.unpack_from("<I", raw, 0x14)[0] // 4
+    words = struct.unpack_from(f"<{n}I", raw, 0)
+    code_end = max(4 * i for i, w in enumerate(words) if w == 0x03E00008) + 8
+    names = {v: nm for nm, v in syms if first <= v < code_end}
+    # function starts: exports and local `jal` targets for certain; then one more after a `jr $ra` when no
+    # branch from before it reaches past it (an early return in the middle of a function is not an end)
+    sure = {first} | set(names)
+    for off, (t, sym, addend) in relocs.items():
+        if t == 4 and sym is None and first <= addend < code_end and words[off // 4] >> 26 == 3:   # jal
+            sure.add(addend)
+    starts = set(sure)
+    reach = 0                       # furthest forward branch target seen in the current function
+    i = first // 4
+    while i < code_end // 4:
+        a = 4 * i
+        if a in sure:
+            reach = 0
+        ins = R.Instruction(words[i], vram=a, category=R.InstrCategory.R5900)
+        if ins.isBranch():
+            reach = max(reach, ins.getBranchVramGeneric())
+        elif ins.isJumpWithAddress() and not ins.doesLink():
+            r = relocs.get(a)
+            if r and r[0] == 4 and r[1] is None:
+                reach = max(reach, r[2])
+        if words[i] == 0x03E00008 and reach <= a + 4:
+            j = i + 2
+            while j < code_end // 4 and words[j] == 0 and 4 * j not in sure:
+                j += 1
+            if j < code_end // 4:
+                starts.add(4 * j)
+            reach = 0
+            i = j
+            continue
+        i += 1
+    starts = sorted(starts)
+    def trimmed(a, end):
+        """end without the alignment padding after the function's last jump (zero words), keeping its delay slot"""
+        e = end
+        while e - 4 > a and words[e // 4 - 1] == 0:
+            e -= 4
+        if e < end:
+            last = R.Instruction(words[e // 4 - 1], vram=e - 4, category=R.InstrCategory.R5900)
+            if last.hasDelaySlot():
+                e += 4
+        return e
+
+    funcs = []
+    for k, a in enumerate(starts):
+        end = starts[k + 1] if k + 1 < len(starts) else code_end
+        funcs.append((a, trimmed(a, end) - a, names.get(a, f"func_{a:06X}")))
+    ptrs = sorted({addend for off, (t, sym, addend) in relocs.items() if t == 2 and sym is None
+                   and first <= addend < code_end})
+    elf = {}
+    for line in open(elf_symbols):
+        m = re.match(r"(\S+) = 0x([0-9A-F]+);", line)
+        if m:
+            elf[m.group(1)] = int(m.group(2), 16)
+    elf_funcs = {int(x, 16) for x in re.findall(r"void F_([0-9A-F]{8})\(Ctx", open(elf_functab_h).read())}
+    gen = Gen(raw, funcs, ptrs, dll={"name": name, "relocs": relocs, "elf": elf, "elf_funcs": elf_funcs})
+    gen.find_entries()
+    gen.report["extra entry points"] = sum(len(v) for v in gen.entries.values())
+    table = sorted([(a, s, nm) for a, s, nm in funcs] +
+                   [(e, 0, f"{nm}+{e - a:#x}") for a, s, nm in funcs for e in sorted(gen.entries.get(a, ()))])
+    os.makedirs(out_dir, exist_ok=True)
+    base = f"dll_{name}_base"
+    head = f'#include "r5900.h"\n#include "functab.h"\n#include "dll_{name}.h"\n#define DB {base}\n\n'
+    files = []
+    for k in range(0, len(funcs), FUNCS_PER_FILE):
+        path_c = os.path.join(out_dir, f"{name}_{k // FUNCS_PER_FILE:03d}.c")
+        with open(path_c, "w") as f:
+            f.write(head)
+            for a, sz, nm in funcs[k:k + FUNCS_PER_FILE]:
+                f.write(gen.function(a, sz, nm) + "\n\n")
+        files.append(path_c)
+    with open(os.path.join(out_dir, f"dll_{name}.h"), "w") as f:
+        f.write(f"/* generated by tools/recomp/recomp.py --dll */\n#pragma once\n#include \"r5900.h\"\n"
+                f"extern u32 {base};\n")
+        for a, _, _ in table:
+            f.write(f"void {gen.fn(a)}(Ctx *c);\n")
+    crc = zlib.crc32(raw[:total]) & 0xFFFFFFFF
+    with open(os.path.join(out_dir, f"{name}_functab.c"), "w") as f:
+        f.write(f'/* generated by tools/recomp/recomp.py --dll */\n#include "dll_{name}.h"\n\nu32 {base};\n\n'
+                f"static const FuncEntry table[] = {{\n")
+        for a, sz, nm in table:
+            f.write(f"    {{{a:#x}, {sz:#x}, {gen.fn(a)}, \"{nm}\"}},\n")
+        f.write(f"}};\n\nconst DllModule dll_{name} = {{\"{name}\", {total:#x}, {crc:#010x}, {code_end:#x}, "
+                f"table, {len(table)}, &{base}}};\n")
+    with open(os.path.join(out_dir, f"{name}_report.txt"), "w") as f:
+        f.write(f"{name}: {len(funcs)} functions in {len(files)} files, code 0x100-{code_end:#x}, "
+                f"{len(relocs)} relocations, crc {crc:08X}\n")
+        for k, v in gen.report.most_common():
+            f.write(f"{v:7}  {k}\n")
+        f.write("\n" + "\n".join(gen.notes) + "\n")
+    print(open(os.path.join(out_dir, f"{name}_report.txt")).read().split("\n\n")[0])
 
 
 def main():
     global ELF_OFF, BASE, DATA_START, DATA_END
+    if sys.argv[1] == "--dll":          # recomp.py --dll <name> <dll.bin> <out_dir> <symbol_addrs.txt> <functab.h>
+        return translate_dll(*sys.argv[2:7])
     raw = open(sys.argv[1], "rb").read()
     ELF_OFF, BASE, DATA_START, DATA_END = elf_layout(raw)
     if os.environ.get("RECOMP_DATA"):

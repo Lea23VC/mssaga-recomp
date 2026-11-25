@@ -66,6 +66,17 @@ typedef struct {
     const char *name;
 } FuncEntry;
 
+/* A game DLL translated ahead of time (tools/recomp/recomp.py --dll): its functions by offset from the base
+ * the game loads it at, which the loader hook (port/hle/dll.c) sets before the DLL's code runs. */
+typedef struct {
+    const char *name;
+    u32 size, crc;              /* of the image as it arrives, before relocation: which DLL this is */
+    u32 code_end;               /* offsets 0x100..code_end are code */
+    const FuncEntry *table;     /* sorted by offset */
+    int count;
+    u32 *base;
+} DllModule;
+
 extern u8 *rt_ram;              /* 32 MB */
 extern u8 rt_spr[0x4000];       /* scratchpad, 0x70000000 */
 

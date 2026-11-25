@@ -14,18 +14,49 @@
 const FuncEntry *rt_functab;
 int rt_functab_count;
 
-const FuncEntry *rt_find(u32 addr) {
-    int lo = 0, hi = rt_functab_count - 1;
+/* MS Saga: the game's DLLs loaded now, each with its translated functions by offset (port/hle/dll.c) */
+#define MAX_DLLS 16
+static struct { u32 base, end; const DllModule *m; } dlls[MAX_DLLS];
+static int ndlls;
+
+void rt_dll_register(u32 base, const DllModule *m) {
+    u32 end = base + m->size;
+    int k = 0;
+    for (int i = 0; i < ndlls; i++)                  /* the memory of a DLL that was there before is reused */
+        if (dlls[i].end <= base || dlls[i].base >= end) dlls[k++] = dlls[i];
+    ndlls = k;
+    if (ndlls == MAX_DLLS) rt_fatal(NULL, "more than %d DLLs loaded", MAX_DLLS);
+    dlls[ndlls++] = (typeof(dlls[0])){base, end, m};
+    *m->base = base;
+}
+
+static const FuncEntry *search(const FuncEntry *t, int n, u32 addr) {
+    int lo = 0, hi = n - 1;
     while (lo <= hi) {
         int mid = (lo + hi) / 2;
-        if (rt_functab[mid].addr == addr) return &rt_functab[mid];
-        if (rt_functab[mid].addr < addr) lo = mid + 1;
+        if (t[mid].addr == addr) return &t[mid];
+        if (t[mid].addr < addr) lo = mid + 1;
         else hi = mid - 1;
     }
     return NULL;
 }
 
+const FuncEntry *rt_find(u32 addr) {
+    const FuncEntry *f = search(rt_functab, rt_functab_count, addr);
+    if (f) return f;
+    for (int i = 0; i < ndlls; i++)
+        if (addr >= dlls[i].base && addr < dlls[i].end) return search(dlls[i].m->table, dlls[i].m->count, addr - dlls[i].base);
+    return NULL;
+}
+
 const char *rt_name_of(u32 addr) {
+    for (int i = 0; i < ndlls; i++)
+        if (addr >= dlls[i].base && addr < dlls[i].end) {
+            const DllModule *m = dlls[i].m;
+            const FuncEntry *best = NULL;
+            for (int k = 0; k < m->count && m->table[k].addr <= addr - dlls[i].base; k++) best = &m->table[k];
+            return best ? best->name : m->name;
+        }
     const FuncEntry *best = NULL;
     for (int i = 0; i < rt_functab_count && rt_functab[i].addr <= addr; i++) best = &rt_functab[i];
     return best ? best->name : "?";
@@ -80,7 +111,7 @@ void rt_di(Ctx *c) { (void)c; cop0_status &= ~0x10000u; }
 /* --trace: the first call of every function is logged with the thread making it, so the log shows
  * how far execution has got. */
 int rt_trace_on;
-static u8 called[(0x00500000 - 0x00100000) / 4 / 8];
+static u8 called[(0x02000000 - 0x00100000) / 4 / 8];   /* MS Saga: all of RAM (the DLLs are above 0x500000) */
 
 /* SSTHEH_TRACE_COUNT=from,to (vertical blanks, with --trace): calls per function in that window,
  * printed at its end, most called first */

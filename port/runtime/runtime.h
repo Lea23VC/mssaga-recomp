@@ -9,6 +9,8 @@ void rt_log(const char *area, const char *fmt, ...) __attribute__((format(printf
 extern int rt_verbose;
 
 const FuncEntry *rt_find(u32 addr);
+/* cpu.c: a translated DLL now lies at base (port/hle/dll.c); replaces any other one overlapping it */
+void rt_dll_register(u32 base, const DllModule *m);
 const char *rt_name_of(u32 addr);
 
 /* hle/heap.c: what a crash report says about an address in a freed block (SSTHEH_POISON_FREE) */

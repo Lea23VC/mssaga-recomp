@@ -143,7 +143,11 @@ The game core registers DLLs (`SYS_RgstDLL`, called from `GAME_Main`) and `SYS_D
   ELF (value 0 = import from the core). Relocations: MIPS types 2 (`R_MIPS_32`), 4 (`R_MIPS_26`), 5 (`HI16`),
   6 (`LO16`). So the DLLs are position-independent only through relocations: their code has absolute addresses
   once loaded.
-- **Consequence for the port** (decision for milestone 1, not taken yet): either (a) make the loader HLE place each
+- Code is only the first part of each image (0x100 to the last `jr $ra`): 3.6 MB of code in all, the rest data.
+  Relocations are RELA (addend in the entry, instruction field 0). Some DLLs import from others (`title` uses
+  `RpgNaibu_*`). A few imports are defined nowhere (debug helpers). The load address comes from the `dll_buf`
+  pool (docs/status.md). How the port handles all this: docs/status.md.
+- **Consequence for the port** (first thoughts, before measuring; position-independent was chosen): either (a) make the loader HLE place each
   DLL at a fixed address of our choosing, relocate it there with our own linker, and recompile it at that base;
   or (b) recompile each DLL position-independently, keeping its relocation sites as "base + offset". (a) is the
   smaller change to `recomp.py` — it is how the MWo3-overlay ports (rogue-galaxy, DQ8) work — but needs the

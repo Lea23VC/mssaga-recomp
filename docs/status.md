@@ -1,5 +1,31 @@
 # Status
 
+## The DLLs are translated and run (2026-11-24)
+
+`./build.sh` now also extracts the 11 DLLs from the ISO (`tools/dlls.py`: AFS + SD0 → `build/dll/bin/`) and
+translates each one with `tools/recomp/recomp.py --dll` → `build/dll/c/`: **7,345 functions, 3.6 MB of code**,
+with no instruction left untranslated and no branch to an unknown place. A full build takes ~3 min on 4 cores.
+
+At run time `title_dll` loads at 0x516A80 and its code runs: `__do_global_ctors`, the global data from the disc
+(`GLB_InitGlbData` … `GLB_StartGameData`), `TITLE_StartTitle`, the memory card check (`MCK_StartMcCheck`,
+`MCW_OpenMcWindow`), drawing through `B3D_*` and RenderWare. Nothing is shown yet (the GS is a stub). The game
+is presumably waiting at the memory card window (the `mcserv` server answers zeros); that is the next thing to look at.
+
+How the DLLs are translated (position-independent, as planned below):
+- **Code range:** 0x100 to the last `jr $ra` + 8. Function starts are the exports, local `jal` targets, and the
+  instruction after a `jr $ra` when no earlier branch of the function reaches past it. (An earlier rule, "always
+  after a `jr $ra`", cut functions at early returns: 70 false tail calls in `title` and 7 branches into nothing.)
+- **Relocations are RELA:** the instruction fields are 0 and each entry carries its full addend. HI16/LO16 sites read
+  the immediate the loader wrote back from guest memory (30,750 sites; measure before making them `base + const`).
+- **Calls:** local R26 → a direct C call. An import whose name is the ELF's → a direct call to `F_…`
+  (18,873). Another DLL's export → the target the loader wrote into the instruction (2,119). Imports nobody
+  defines (`RwMatrixGetPos`, `FIFO_PrintInfo`, … debug helpers missing from the release ELF) also go that way and
+  would stop with "not a known function" if ever called.
+- **Run time:** `port/hle/dll.c` hooks `snDllLoaded` (before): size + CRC32 of the image as it arrived say which
+  DLL it is, and `rt_dll_register` (cpu.c) puts its function table at that base (it replaces older DLLs it
+  overlaps; `snDllUnload` needs the table for the destructors, so nothing is removed there). `rt_find` /
+  `rt_name_of` look in the loaded DLLs after the ELF.
+
 ## Milestone 2 — boots to the first block (2026-11-24)
 
 `./build.sh` now also links `build/mssaga` (runtime, kernel and IOP services from SaintSeiyaRecomp, MIT).
@@ -70,10 +96,9 @@ The objects need: `rt_ram`, `rt_spr`, `rt_mmio_read/write(128)`, `rt_call`, `rt_
 `rt_cpcond0`, `vu0_exec`, `vu0_cfc2`, `vu0_ctc2`. All exist in the reference's `port/runtime` + `port/kernel`
 except `rt_cpcond0`. `port/runtime/r5900.h` is the reference's, with the additions above.
 
-## Not done yet: the DLLs
+## The DLLs: the first plan (superseded)
 
-Most of the game is in the 11 SN DLLs inside the AFS (docs/recon.md), and they are not translated yet. First plan
-(written before measuring; see milestone 2 above for the revised choice):
+Written before measuring, kept for the record (see above for what was done):
 
 1. A tool that extracts and decompresses them from the ISO at build time (`afs.py` + `sd0.py`, into `build/`).
 2. Measure where the game puts them (log `snDllLoaded`'s arguments once the core boots, or in PCSX2) and which
