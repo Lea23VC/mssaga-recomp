@@ -1286,7 +1286,8 @@ static void classify(GpuDraw *d, int type, u32 first) {
     }
     /* MS Saga: 3D drawn into a box cut out of the screen (a dialogue portrait, the minimap's view: VU1 with a scissor
        narrower than the frame) goes with the 2D around it, kept 4:3 */
-    if (gs_cur_path == 1 && type >= 3 && !full_scissor && d->scissor[1] < fw) d->flat2d = 1;
+    d->box = gs_cur_path == 1 && type >= 3 && !full_scissor && d->scissor[1] < fw;
+    if (d->box) d->flat2d = 1;
     /* MS Saga: lines (a portrait's frame, drawn through VU1 with the whole screen as scissor) are 2D too */
     if ((type == 1 || type == 2) && d->scissor[1] < fw) d->flat2d = 1;
     d->sides = !d->flat2d && (d->tex >= 0 || gs_cur_path == 1) && full_scissor && (x0 < fw / 8.0f || x1 > fw * 7 / 8.0f);

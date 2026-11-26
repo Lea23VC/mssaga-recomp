@@ -454,6 +454,48 @@ static int anchored(const GpuDraw *d, int wide_3d) {
     return on && d->fight && kept_43(d, wide_3d) && d->count % 3 == 0;
 }
 
+/* MS Saga: dialogue portraits in widescreen. A portrait is 3D drawn into a box of the screen (GpuDraw.box) in the
+   upper part of it (the minimap's box is in the lower part). Kept 4:3 in shape like the 2D, a portrait in the left
+   part of the screen goes to the screen's left edge, one in the right part to its right edge, a centred one stays:
+   its 3D, and the 2D lying on its box (its frame's lines and pieces). The text box and the rest stay in the middle.
+   Sets each draw's shift (0: none), in frame pixels after the 3/4 narrowing. MSSAGA_WIDE_PORTRAITS=0: all in the
+   middle, as before. */
+static void portrait_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
+    static int on = -1;
+    if (on < 0) on = !(getenv("MSSAGA_WIDE_PORTRAITS") && !atoi(getenv("MSSAGA_WIDE_PORTRAITS")));
+    enum { MAXP = 4 };
+    u32 box[MAXP][4], nbox = 0;
+    float shift[MAXP];
+    for (u32 i = 0; i < f->ndraws; i++) f->draws[i].shift = 0.0f;
+    if (!on) return;
+    for (u32 i = 0; i < f->ndraws && nbox < MAXP; i++) {
+        const GpuDraw *d = &f->draws[i];
+        if (!d->box || d->scissor[2] >= 180) continue;
+        u32 k = 0;
+        while (k < nbox && memcmp(box[k], d->scissor, sizeof box[k])) k++;
+        if (k < nbox) continue;
+        memcpy(box[nbox], d->scissor, sizeof box[nbox]);
+        float c = (float)(d->fbw * 32), cx = 0.5f * ((float)d->scissor[0] + (float)d->scissor[1] + 1.0f);
+        shift[nbox++] = cx < 0.85f * c ? -0.25f * c : cx > 1.15f * c ? 0.25f * c : 0.0f;
+    }
+    for (u32 i = 0; i < f->ndraws && nbox; i++) {
+        GpuDraw *d = &f->draws[i];
+        if (!kept_43(d, wide_3d) || anchored(d, wide_3d)) continue;
+        for (u32 k = 0; k < nbox; k++) {
+            int in = d->box && !memcmp(box[k], d->scissor, sizeof box[k]);
+            if (!in) {                              /* 2D on the box: within it, give or take its frame */
+                float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+                for (u32 q = d->first; q < d->first + d->count; q++) {
+                    x0 = fminf(x0, m[q].x); x1 = fmaxf(x1, m[q].x); y0 = fminf(y0, m[q].y); y1 = fmaxf(y1, m[q].y);
+                }
+                float e = 10.0f;
+                in = x0 >= box[k][0] - e && x1 <= box[k][1] + 1 + e && y0 >= box[k][2] - e && y1 <= box[k][3] + 1 + e;
+            }
+            if (in) { d->shift = shift[k]; break; }
+        }
+    }
+}
+
 static void upload_verts(SDL_GPUCommandBuffer *cmd, GpuFrame *f, const GpuVertex *verts) {
     SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
     u32 vbytes = f->nverts * sizeof(GpuVertex);
@@ -475,6 +517,7 @@ static void upload_verts(SDL_GPUCommandBuffer *cmd, GpuFrame *f, const GpuVertex
         /* widescreen: the picture is shown 4/3 wider, so 2D is drawn 3/4 as wide around the centre */
         if (widescreen_on()) {
             int wide_3d = frame_wide_3d(f);
+            portrait_shifts(f, m, wide_3d);
             for (u32 i = 0; i < f->ndraws; i++) {
                 const GpuDraw *d = &f->draws[i];
                 if (!kept_43(d, wide_3d)) continue;
@@ -499,7 +542,7 @@ static void upload_verts(SDL_GPUCommandBuffer *cmd, GpuFrame *f, const GpuVertex
                     }
                     continue;
                 }
-                for (u32 k = d->first; k < d->first + d->count; k++) m[k].x = c + (m[k].x - c) * 0.75f;
+                for (u32 k = d->first; k < d->first + d->count; k++) m[k].x = c + (m[k].x - c) * 0.75f + d->shift;
             }
         }
         SDL_UnmapGPUTransferBuffer(dev, vxfer);
@@ -791,8 +834,8 @@ static SDL_Rect draw_scissor(const Replay *r, const GpuDraw *d) {
                    (int)(d->scissor[1] - d->scissor[0] + 1) * scale, (int)(d->scissor[3] - d->scissor[2] + 1) * scale};
     if (kept_43(d, r->wide_3d) && widescreen_on() && !anchored(d, r->wide_3d) && !r->wide_2d) {
         float c = (float)(d->fbw * 32);
-        int x0 = (int)((c + ((float)d->scissor[0] - c) * 0.75f) * scale);
-        int x1 = (int)((c + ((float)d->scissor[1] + 1 - c) * 0.75f) * scale);
+        int x0 = (int)((c + ((float)d->scissor[0] - c) * 0.75f + d->shift) * scale);
+        int x1 = (int)((c + ((float)d->scissor[1] + 1 - c) * 0.75f + d->shift) * scale);
         sc.x = x0;
         sc.w = x1 - x0;
     }

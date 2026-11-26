@@ -35,8 +35,9 @@ by its pixels (`tex_by_pixels`) before a new one is made: 234 made, none dropped
 **16:9 portraits**: dialogue portraits and the minimap's view are 3D drawn into a box of the screen (a sub-raster).
 Their cameras keep their view window (only cameras drawing the 512-wide screen are widened; decided at
 RwCameraBeginUpdate, which also makes F2 take effect at once), VU1 draws with a scissor narrower than the frame and
-lines (the portrait's frame) are kept 4:3 with the 2D. Asked for: portraits anchored to the screen's left / right edge
-in 16:9 (the text box stays centred), not done yet.
+lines (the portrait's frame) are kept 4:3 with the 2D. In 16:9 a portrait in the left part of the screen is moved to
+its left edge, one in the right part to its right edge, a centred one stays (gpu_vk.c portrait_shifts: the box's 3D
+and the 2D on its box; the text box stays). `MSSAGA_WIDE_PORTRAITS=0`: all in the middle.
 
 ## Discord status (2026-11-25)
 
