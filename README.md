@@ -30,6 +30,20 @@ Status: title, movies, story, field, battles, sound and music, memory card saves
 playthrough hasn't been done yet. See [docs/status.md](docs/status.md), [docs/recon.md](docs/recon.md) and
 [CLAUDE.md](CLAUDE.md).
 
+## Known limitations
+
+- **Not played to the end.** Tested from the start through the first chapter (story, field, battles, saving);
+  later areas may still break. Problems found there are fixed as they come up.
+- **Windows** builds are cross-compiled and have not been run on a real Windows machine yet.
+- **No Linux release:** on Linux, build it from source (below).
+- **USA release only** (SLUS-21270). The Japanese release (*Gundam True Odyssey*) isn't supported.
+- **30 fps**, as on the PS2. A 60 fps mode was tried and parked: the game's logic and animations are tied to
+  its frame rate.
+- **Widescreen (16:9)** shows more of the 3D at the sides, but some screens stay 4:3 with black sides (or your
+  `sides.png`): menus, the title, story pictures, and scenes where the game splits the screen into two views
+  (both halves stay 4:3 for now). If something looks stretched, cut or out of place in 16:9, press F9 right
+  there and attach the `gsrec_*.gsrec` file to your report; F2 switches back to the PS2's 4:3 picture.
+
 ## Building (Linux; developed on CachyOS)
 
 ```sh
