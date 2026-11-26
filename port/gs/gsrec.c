@@ -71,22 +71,39 @@ void gsrec_data(int ch, int tag, const u8 *p, u32 bytes) {
     else if (ch == 2) put(EV_GIF, p, bytes);
 }
 
+/* F9 (display.c): the next 150 pictures recorded now, into gsrec_<vblank>.gsrec in the settings folder (for bug
+   reports: mssaga --gs-replay <file> shows them again) */
+void display_config_path(char *p, size_t n, const char *name);     /* display.c */
+static volatile int requested;
+static char path[1100];
+void gsrec_request(void) { requested = 1; }
+
 /* dmac.c, on the GS thread: a picture shown */
 void gsrec_flip(void) {
     if (state < 0) {
         const char *e = getenv("MSSAGA_GSREC");
         state = e && *e;
+        if (state) snprintf(path, sizeof path, "%s", e);
         from = getenv("MSSAGA_GSREC_FROM") ? (u32)atoi(getenv("MSSAGA_GSREC_FROM")) : 9000;
         frames = getenv("MSSAGA_GSREC_FRAMES") ? (u32)atoi(getenv("MSSAGA_GSREC_FRAMES")) : 150;
     }
+    if (requested && state != 2) {
+        requested = 0;
+        char name[64];
+        snprintf(name, sizeof name, "gsrec_%u.gsrec", kernel_vblank_count());
+        display_config_path(path, sizeof path, name);
+        from = 0;
+        recorded = 0;
+        state = 1;
+    }
     if (state == 1 && kernel_vblank_count() >= from) {
-        if (!(out = fopen(getenv("MSSAGA_GSREC"), "wb"))) { state = 0; return; }
+        if (!(out = fopen(path, "wb"))) { state = 0; return; }
         fwrite(magic, sizeof magic, 1, out);
         gs_state_io(out, 1);
         vif_state_io(out, 1);
         vu_state_io(out, 1);
         state = 2;
-        rt_log("gsrec", "recording %u pictures from vertical blank %u", frames, kernel_vblank_count());
+        rt_log("gsrec", "recording %u pictures from vertical blank %u into %s", frames, kernel_vblank_count(), path);
         return;
     }
     if (state != 2) return;
@@ -232,7 +249,7 @@ int gsrec_replay(const char *path, int warm) {
                     if ((int)nframe == dump)
                         for (u32 k = 0; k < fr->ndraws; k++) {
                             const GpuDraw *d = &fr->draws[k];
-                            if (!d->textured) continue;
+                            if (!d->textured && !d->flat2d && !getenv("MSSAGA_REPLAY_DUMP_ALL")) continue;
                             float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
                             for (u32 q = d->first; q < d->first + d->count; q++) {
                                 const GpuVertex *v = &fr->verts[q];
@@ -244,6 +261,9 @@ int gsrec_replay(const char *path, int warm) {
                                    "fst %u abe %u alpha %llx tfx %u tcc %u filter %u flat2d %u fbp %X\n",
                                    k, d->tex, d->tw, d->th, d->count, x0, x1, y0, y1, v->r, v->g, v->b, v->a, v->s, v->t, v->q,
                                    d->fst, d->abe, (unsigned long long)d->alpha, d->tfx, d->tcc, d->filter, d->flat2d, d->fbp);
+                            printf("   z %.6f..%.6f ztst %u zwrite %u sides %u fullw %u box %u scissor %u-%u x %u-%u\n",
+                                   fr->verts[d->first].z, fr->verts[d->first + d->count - 1].z, d->ztst, d->zwrite, d->sides,
+                                   d->fullw, d->box, d->scissor[0], d->scissor[1], d->scissor[2], d->scissor[3]);
                             if (((d->alpha) & 0xFF) == 0x48)
                                 for (u32 q = d->first; q < d->first + d->count; q++)
                                     printf("   v %.1f,%.1f s %.4f t %.4f q %.4f\n", fr->verts[q].x, fr->verts[q].y, fr->verts[q].s,
@@ -254,8 +274,8 @@ int gsrec_replay(const char *path, int warm) {
                     gpu_upload(fr);                         /* every frame drawn: the picture shown is often */
                     gpu_render(fr, NULL);                   /* the one drawn the frame before (double buffering) */
                     if (nframe % every == 0) replay_shot(shots, nframe);
-                    nframe++;
                 }
+                nframe++;
                 gpu_release_frame(fr);
             }
             if (pictures >= (u32)warm) hashing += now_ms() - th;

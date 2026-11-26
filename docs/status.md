@@ -1,5 +1,26 @@
 # Status
 
+## 16:9: the UI drawn through VU1 keeps its shape; markers follow the 3D; sides black or a picture (2026-11-26)
+
+MS Saga draws most of its UI through VU1 like its 3D: dialogue boxes and their text, the field radar, the menus
+(name entry, party, memory card), the battle menus, labels. The widescreen rule "2D = drawn from the EE" missed them,
+so they were stretched. `gs.c` classify now also keeps 4:3 a VU1 primitive whose vertices all share one depth with
+q = 1 and that is at the very front (z >= 0.999: dialogue, HUD) or drawn over everything (depth test always: menus at
+z 0, markers at a depth of their own that they write). Kept with the 3D: effects drawn over everything at the 3D's
+depths without writing them (an explosion's billboards), additive untextured shapes whose alpha fades to the rim (the
+light haze over some fields, in pieces; placed apart their seams showed as beams), and draws reading a render target
+(the soft glow copy of the whole picture at save points). A menu's highlight bar is additive too but even: kept.
+Markers on things in the 3D (the target's brackets, a unit's RNG label) keep their shape but go where the widened 3D
+puts their centre, with the 2D inside them (`gpu_vk.c` marker_shifts).
+
+The sides of a 4:3-only picture are now black (were the picture blurred; `MSSAGA_WIDE_BLUR=1` brings it back), or
+show `sides.png` from the settings folder, dimmed, covering 16:9 with its top kept (the player's own picture; none
+ships; `MSSAGA_SIDES=0` black).
+
+**F9** records the next 150 pictures (`gsrec_<vblank>.gsrec` in the settings folder) for `--gs-replay`; with
+`MSSAGA_REPLAY_SHOTS` and `MSSAGA_REPLAY_DUMP=n` (`MSSAGA_REPLAY_DUMP_ALL=1`: untextured too) that is how the player's
+screens above were found and checked. The recordings hold game data: never in git.
+
 ## Dotted squares in the hangar cutscene fixed: sprites take each corner's own Q (2026-11-26)
 
 The glows of the first hangar cutscene (orange lights at the pipe ends, a blue glow) showed as dotted squares with the

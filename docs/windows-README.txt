@@ -22,6 +22,8 @@ A gamepad (Xbox, PlayStation, ...) works as a DualShock 2. Keyboard:
   F2   widescreen 16:9 on / off (remembered)
   F3   performance panel
   F4   vsync on / off
+  F9   records the next few seconds of graphics for a bug report
+       (gsrec_*.gsrec in the folder below; large, delete them when done)
 
 Cutscenes can be skipped with Start or Triangle, as on the PS2.
 
@@ -43,6 +45,8 @@ Everything is kept in %APPDATA%\mssaga:
   iso.txt       where your disc image is
   SLUS_212.70   the game's executable, copied from your disc image
   mssaga.log    the log of the last run (useful when reporting a problem)
+  sides.png     (optional, yours) a picture shown at the sides of screens
+                drawn only in 4:3 (menus, title) in widescreen; black without it
 
 Third-party software
 --------------------

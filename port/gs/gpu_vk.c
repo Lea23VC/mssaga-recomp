@@ -460,6 +460,40 @@ static int anchored(const GpuDraw *d, int wide_3d) {
    its 3D, and the 2D lying on its box (its frame's lines and pieces). The text box and the rest stay in the middle.
    Sets each draw's shift (0: none), in frame pixels after the 3/4 narrowing. MSSAGA_WIDE_PORTRAITS=0: all in the
    middle, as before. */
+/* MS Saga: markers on things in the 3D (gs.c: the target's brackets, a unit's range label) keep their 4:3 shape
+   but go where the widened 3D puts their centre, and the 2D inside one (its text) with it */
+static void marker_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
+    enum { MAXM = 32 };
+    float box[MAXM][4], shift[MAXM];
+    u32 n = 0;
+    if (!wide_3d) return;
+    for (u32 i = 0; i < f->ndraws && n < MAXM; i++) {
+        GpuDraw *d = &f->draws[i];
+        if (!d->marker || !d->count) continue;
+        float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+        for (u32 q = d->first; q < d->first + d->count; q++) {
+            x0 = fminf(x0, m[q].x); x1 = fmaxf(x1, m[q].x); y0 = fminf(y0, m[q].y); y1 = fmaxf(y1, m[q].y);
+        }
+        float c = (float)(d->fbw * 32);
+        d->shift = (0.5f * (x0 + x1) - c) * 0.25f;   /* its centre where the 3D's would be: c + (x - c), not 3/4 of it */
+        box[n][0] = x0; box[n][1] = x1; box[n][2] = y0; box[n][3] = y1;
+        shift[n++] = d->shift;
+    }
+    for (u32 i = 0; i < f->ndraws && n; i++) {
+        GpuDraw *d = &f->draws[i];
+        if (d->marker || !d->flat2d || !d->count) continue;
+        float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+        for (u32 q = d->first; q < d->first + d->count; q++) {
+            x0 = fminf(x0, m[q].x); x1 = fmaxf(x1, m[q].x); y0 = fminf(y0, m[q].y); y1 = fmaxf(y1, m[q].y);
+        }
+        for (u32 k = 0; k < n; k++)
+            if (x0 >= box[k][0] - 2 && x1 <= box[k][1] + 2 && y0 >= box[k][2] - 2 && y1 <= box[k][3] + 2) {
+                d->shift = shift[k];
+                break;
+            }
+    }
+}
+
 static void portrait_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
     static int on = -1;
     if (on < 0) on = !(getenv("MSSAGA_WIDE_PORTRAITS") && !atoi(getenv("MSSAGA_WIDE_PORTRAITS")));
@@ -467,6 +501,7 @@ static void portrait_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
     u32 box[MAXP][4], nbox = 0;
     float shift[MAXP];
     for (u32 i = 0; i < f->ndraws; i++) f->draws[i].shift = 0.0f;
+    marker_shifts(f, m, wide_3d);
     if (!on) return;
     for (u32 i = 0; i < f->ndraws && nbox < MAXP; i++) {
         const GpuDraw *d = &f->draws[i];
@@ -992,6 +1027,44 @@ static void upload_picture(SDL_GPUTexture **t, int *tw, int *th, const u32 *px, 
     SDL_ReleaseGPUTransferBuffer(dev, tb);
 }
 
+/* widescreen sides of a 4:3-only picture (menus, title, story scenes): sides.png in the settings folder (any
+   picture the player chooses; none comes with the port), dimmed; black without it. MSSAGA_SIDES=0: black. */
+#if !SDL_VERSION_ATLEAST(3, 4, 0)
+static SDL_Surface *SDL_LoadPNG(const char *path) { (void)path; SDL_SetError("needs SDL 3.4"); return NULL; }
+#endif
+void display_config_path(char *p, size_t n, const char *name);     /* display.c */
+static SDL_GPUTexture *sides;
+static int sides_w, sides_h, sides_state = -1;  /* -1 not looked for yet, 0 none, 1 loaded */
+
+static void sides_load(void) {
+    sides_state = 0;
+    const char *e = getenv("MSSAGA_SIDES");
+    if (e && !atoi(e)) return;
+    char path[1100];
+    display_config_path(path, sizeof path, "sides.png");
+    SDL_Surface *s = SDL_LoadPNG(path);
+    if (!s) return;
+    SDL_Surface *c = SDL_ConvertSurface(s, SDL_PIXELFORMAT_RGBA32);
+    SDL_DestroySurface(s);
+    if (!c) return;
+    u32 *px = malloc((size_t)c->w * c->h * 4);
+    if (px) {
+        for (int y = 0; y < c->h; y++) {
+            const u8 *row = (const u8 *)c->pixels + (size_t)y * c->pitch;
+            u8 *o = (u8 *)(px + (size_t)y * c->w);
+            for (int x = 0; x < c->w * 4; x += 4) {   /* dimmed, so the game's picture stays what one looks at */
+                o[x] = (u8)(row[x] * 0.55f); o[x + 1] = (u8)(row[x + 1] * 0.55f); o[x + 2] = (u8)(row[x + 2] * 0.55f);
+                o[x + 3] = 255;
+            }
+        }
+        upload_picture(&sides, &sides_w, &sides_h, px, c->w, c->h);
+        free(px);
+        sides_state = 1;
+        rt_log("display", "widescreen sides: %s (%dx%d)", path, c->w, c->h);
+    }
+    SDL_DestroySurface(c);
+}
+
 void gpu_set_overlay(const u32 *px, int w, int h) {
     if (!dev) return;
     if (!px) { overlay_on = 0; return; }
@@ -1028,9 +1101,12 @@ static void present_into(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *swap, u32 sw
         w = movie_w;
         h = movie_h;
     }
-    /* widescreen with nothing drawn at the sides (a 4:3 picture: title, logos, story scenes): the
-       sides show the picture itself, zoomed to the width and blurred (a plain background stays
-       plain); it stays sharp in the middle. The blur is made small (a box of taps) and stretched. */
+    /* widescreen with nothing drawn at the sides (a 4:3 picture: title, logos, story scenes, menus): the
+       sides stay black, or show sides.png (sides_load). MSSAGA_WIDE_BLUR=1: they show the picture itself, zoomed to the width and blurred
+       (a plain background stays plain); it stays sharp in the middle. The blur is made small (a box of
+       taps) and stretched. */
+    static int blur_on = -1;
+    if (blur_on < 0) blur_on = getenv("MSSAGA_WIDE_BLUR") && atoi(getenv("MSSAGA_WIDE_BLUR"));
     int fill = 0;
     float mid[4];                        /* the middle 3/4 of the picture's width */
     if (src && widescreen_on() && !is_movie) {
@@ -1039,7 +1115,7 @@ static void present_into(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *swap, u32 sw
             if (colors[j].tex == src && colors[j].sides) fill = 0;
         float cw = (rect[2] - rect[0]) * 0.125f, ch = (rect[3] - rect[1]) * 0.125f;
         mid[0] = rect[0] + cw; mid[1] = rect[1]; mid[2] = rect[2] - cw; mid[3] = rect[3];
-        if (fill) {
+        if (fill && blur_on) {
             if (!blur) blur = texture(BLUR_W, BLUR_H, swap_fmt, SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET);
             SDL_GPUColorTargetInfo bi = {0};
             bi.texture = blur;
@@ -1074,13 +1150,28 @@ static void present_into(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *swap, u32 sw
         picture_vp = vp;
         SDL_SetGPUViewport(rp, &vp);
         SDL_BindGPUGraphicsPipeline(rp, present_pipe);
-        if (fill) {                      /* the blurred sides, then only the middle of the picture */
-            float full[4] = {0, 0, 1, 1}, one[4] = {0, 0, 1, 0};
-            SDL_PushGPUVertexUniformData(cmd, 0, full, sizeof full);
-            SDL_PushGPUFragmentUniformData(cmd, 0, one, sizeof one);
-            SDL_GPUTextureSamplerBinding bsb = {blur, samplers[1 | 6]};
-            SDL_BindGPUFragmentSamplers(rp, 0, &bsb, 1);
-            SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
+        if (fill) {                      /* the sides (black, a picture, or blurred), then only the middle of the picture */
+            if (sides_state < 0) sides_load();
+            if (sides_state > 0 && !blur_on) {   /* the picture over the whole 16:9, its top kept */
+                float iw = (float)sides_w, ih = (float)sides_h, va = vw / vh;
+                float r[4] = {0, 0, 1, 1};
+                if (iw / ih < va) r[3] = (iw / va) / ih;           /* taller than 16:9: its top part */
+                else { float u = (ih * va) / iw; r[0] = 0.5f - u / 2; r[2] = 0.5f + u / 2; }
+                float one[4] = {0, 0, 1, 0};
+                SDL_PushGPUVertexUniformData(cmd, 0, r, sizeof r);
+                SDL_PushGPUFragmentUniformData(cmd, 0, one, sizeof one);
+                SDL_GPUTextureSamplerBinding ssb = {sides, samplers[1 | 6]};
+                SDL_BindGPUFragmentSamplers(rp, 0, &ssb, 1);
+                SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
+            }
+            if (blur_on) {
+                float full[4] = {0, 0, 1, 1}, one[4] = {0, 0, 1, 0};
+                SDL_PushGPUVertexUniformData(cmd, 0, full, sizeof full);
+                SDL_PushGPUFragmentUniformData(cmd, 0, one, sizeof one);
+                SDL_GPUTextureSamplerBinding bsb = {blur, samplers[1 | 6]};
+                SDL_BindGPUFragmentSamplers(rp, 0, &bsb, 1);
+                SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
+            }
             vp.x += vw * 0.125f;
             vp.w = vw *= 0.75f;
             SDL_SetGPUViewport(rp, &vp);

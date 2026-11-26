@@ -1290,6 +1290,31 @@ static void classify(GpuDraw *d, int type, u32 first) {
     if (d->box) d->flat2d = 1;
     /* MS Saga: lines (a portrait's frame, drawn through VU1 with the whole screen as scissor) are 2D too */
     if ((type == 1 || type == 2) && d->scissor[1] < fw) d->flat2d = 1;
+    /* MS Saga: the dialogue boxes, their text, the field's radar and the menus are drawn through VU1 too, flat on
+       the screen: every vertex at the same depth, q = 1, at the very front or over everything (no depth
+       test). The 3D never is. Not the glows of light over some fields, drawn the same way (untextured, added on,
+       fading to nothing at the rim): they go on stretched with the 3D, all their pieces together (placed apart,
+       their seams showed as beams). A menu's highlight bar is added on too, but evenly: it stays with its menu.
+       Nor the picture drawn again over itself (a soft glow over the whole field): it covers the 16:9 screen */
+    if (gs_cur_path == 1 && type >= 3 && !d->flat2d && d->count && d->tex >= -1) {
+        float z = rec->verts[first].z;
+        int additive = d->abe && (d->alpha & 0xFF) == 0x48;      /* Cs * As + Cd: light */
+        int fades = 0;                                          /* a glow: its alpha falls to its rim */
+        if (additive && !d->textured)
+            for (u32 i = first + 1; i < rec->nverts; i++) fades |= rec->verts[i].a != rec->verts[first].a;
+        /* at the front, or over everything: the menus at depth 0, markers at a depth of their own written down.
+           Not the effects drawn over everything at the 3D's depths without writing them (an explosion's flat
+           pieces, made to face the camera): they go with the 3D */
+        int flat = z >= 0.999f || (d->ztst == 2 && (z == 0.0f || d->zwrite));
+        int ui = flat && !(additive && !d->textured && fades);
+        for (u32 i = first; ui && i < rec->nverts; i++)
+            ui = rec->verts[i].z == z && rec->verts[i].q == 1.0f;
+        if (ui) d->flat2d = 1;
+        /* a marker on something in the 3D (the target's brackets, a unit's range): over everything like the menus,
+           but at a depth of its own, between the menus' 0 and the dialogue's 1. It keeps its shape and goes where
+           the widened 3D puts its centre (gpu_vk.c) */
+        d->marker = ui && d->ztst == 2 && z > 0.0f && z < 0.999f;
+    }
     d->sides = !d->flat2d && (d->tex >= 0 || gs_cur_path == 1) && full_scissor && (x0 < fw / 8.0f || x1 > fw * 7 / 8.0f);
     int fight_on(void);                         /* port/hle/training.c */
     d->fight = d->flat2d && fight_on();

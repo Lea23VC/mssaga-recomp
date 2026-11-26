@@ -598,6 +598,10 @@ static int display_window_gpu(void) {
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F2 && !e.key.repeat) widescreen_toggle();
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F3) panel_on = !panel_on;
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F4) gpu_set_vsync(!gpu_vsync());
+            if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F9 && !e.key.repeat) {
+                void gsrec_request(void);                   /* gsrec.c: a recording for bug reports */
+                gsrec_request();
+            }
             if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) training_key(e.key.scancode);
         }
         poll_pads();

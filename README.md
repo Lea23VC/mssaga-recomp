@@ -21,8 +21,10 @@ Nothing from the game is in this repository or in its releases. You need your ow
   battle). It's on by default; `--discord off`, or a file named `discord` containing `0` in the settings folder,
   turns it off.
 - **Keys:** arrows, Z/X/A/S = Cross/Circle/Square/Triangle, Q/W/E/R = L1/R1/L2/R2, Enter = Start,
-  Backspace = Select. F1 window size, F2 widescreen, F3 performance panel, F4 V-Sync. A gamepad works as a
-  DualShock 2.
+  Backspace = Select. F1 window size, F2 widescreen, F3 performance panel, F4 V-Sync, F9 records the next few
+  seconds of graphics for a bug report (`gsrec_*.gsrec` in the settings folder). A gamepad works as a DualShock 2.
+- **Widescreen sides:** screens drawn only in 4:3 (menus, title) have black sides; a picture of your own named
+  `sides.png` in the settings folder is shown there instead (dimmed, its top part).
 
 Status: title, movies, story, field, battles, sound and music, memory card saves and widescreen work; a full
 playthrough hasn't been done yet. See [docs/status.md](docs/status.md), [docs/recon.md](docs/recon.md) and
