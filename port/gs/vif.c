@@ -66,7 +66,12 @@ static void run(Vif *v, u32 code, const u32 *data) {
         if (!gif_path3_masked) { void dmac_path3_unmasked(void); dmac_path3_unmasked(); }
         break;
     }
-    case 0x07: case 0x10: case 0x11: case 0x13: break;
+    case 0x07: case 0x10: case 0x11: break;
+    case 0x13: {                /* FLUSHA: waits for path 3 too (MS Saga: an open path 3 sends the rest, dmac.c) */
+        void dmac_path3_open_step(int all);
+        if (v->id == 1) dmac_path3_open_step(1);
+        break;
+    }
     case 0x14: case 0x15: case 0x17:                                      /* MSCAL / MSCALF / MSCNT */
         if (v->id == 1) {
             vu1_top = v->tops;                                            /* what XTOP reads */
@@ -78,6 +83,7 @@ static void run(Vif *v, u32 code, const u32 *data) {
             if (rt_verbose > 1 && v->id == 1 && told++ < 30)
                 rt_log("vif", "MSCAL %03X top %03X itop %03X base %03X ofst %03X", imm, vu1_top, v->itop, v->base, v->ofst);
         }
+        if (v->id == 1) { void dmac_path3_open_step(int all); dmac_path3_open_step(0); }   /* MS Saga: dmac.c */
         vu_start(v->id, cmd == 0x17 ? -1 : (int)imm, v->itop);
         break;
     case 0x20: v->mask = data[0]; break;

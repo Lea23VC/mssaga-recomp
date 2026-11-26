@@ -176,11 +176,16 @@ static void finish(int ch) {
     kernel_raise_dmac(ch);                          /* the kernel runs the handlers enabled for it */
 }
 
+void dmac_path3_flush(void);
+void dmac_path3_open_step(int all);
+
 static void transfer(Ctx *c, int ch) {
     u32 *r = reg[ch];
     int mod = (r[0] >> 2) & 3;
+    if (ch == 2) dmac_path3_flush();                /* one released before goes first */
     if (mod == 1) run_chain(c, ch);
     else deliver(c, ch, mem(r[0x10 / 4], r[0x10 / 4] >> 31), r[0x20 / 4]);
+    if (ch == 1) dmac_path3_open_step(1);           /* the end of the VIF1 transfer: open, the rest goes */
 }
 
 /* ---- the VIF1 / GIF thread */
@@ -200,6 +205,7 @@ static void *gs_thread(void *arg) {
         int ch = queue[qhead];
         pthread_mutex_unlock(&qlock);
         if (ch == JOB_FLIP) {
+            dmac_path3_flush();
             gsrec_flip();
             gpu_seal_frame();
             pthread_mutex_lock(&qlock);
@@ -236,6 +242,7 @@ void dmac_vif1_fifo(const u8 *qw) {
     u32 w[4], pend = vif1_pending();
     memcpy(w, qw, 16);
     vif1_dma(qw, 1);
+    dmac_path3_flush();                             /* a FIFO write stands alone: as before */
     if (log) rt_log("fifo", "VIF1 FIFO %08X %08X %08X %08X (VIF1 was collecting for %08X) -> path 3 %s", w[0], w[1], w[2],
                     w[3], pend, gif_path3_masked ? "masked" : "open");
 }
@@ -271,20 +278,96 @@ void dmac_gs_flip(void) {
     if (!gpu_on) return;
     gs_thread_start();
     if (async) queue_job(JOB_FLIP);
-    else gpu_seal_frame();
+    else { dmac_path3_flush(); gpu_seal_frame(); }
 }
 
 static volatile int gif_held;               /* MS Saga: a GIF transfer waiting for path 3 to be unmasked */
 
 int dmac_gif_held(void) { return __atomic_load_n(&gif_held, __ATOMIC_ACQUIRE); }
 
-/* VIF1 unmasked path 3 (MSKPATH3 0): the GIF transfer held back runs now, on the thread VIF1 is on. */
-void dmac_path3_unmasked(void) {
-    if (!__atomic_exchange_n(&gif_held, 0, __ATOMIC_ACQ_REL)) return;
-    if (want_dma_log()) rt_log("dma", "ch2 released: path 3 unmasked");
-    transfer(NULL, 2);
-    finish(2);
+/* MS Saga: path 3 one GIF packet at a time. VIF1's MSKPATH3 masks path 3 at the end of the packet it is sending, so
+ * RenderWare trickles its texture uploads in: it starts the GIF chain with path 3 masked, then in its VIF1 chain
+ * unmasks and masks again around each draw that may take one (MSKPATH3 0, MSKPATH3 1: one packet goes through).
+ * Run whole at the first unmask, the uploads overwrote the textures of the draws still to come (the game streams
+ * its textures through a pool: one frame in five the GM's armour drawn with another texture, a flicker). So the
+ * held chain is walked as a cursor: one packet at an unmask, one more at each VU1 program started while path 3 is
+ * open (time passes on the PS2), the rest at FLUSHA or at the end of the VIF1 transfer while open, and before a
+ * new path 3 transfer or the end of the frame in any case (dmac_path3_flush). MSSAGA_PATH3_WHOLE=1: as before. */
+static struct { int active; u32 tadr, asr[2]; int asp, done; const u8 *p; u32 left; } p3;
+
+void gsrec_data(int ch, int tag, const u8 *p, u32 bytes);
+u32 gif_dma_packet(const u8 *data, u32 qwc, int *ended);    /* gs.c */
+
+/* the next tag's data into p3.p / p3.left; 0: the chain is over */
+static int p3_fetch(void) {
+    while (!p3.left) {
+        if (p3.done) return 0;
+        const u8 *t = mem(p3.tadr, 0);
+        if (!t) { p3.done = 1; return 0; }
+        u64 tag;
+        memcpy(&tag, t, 8);
+        u32 qwc = tag & 0xFFFF, id = (tag >> 28) & 7, addr = (u32)(tag >> 32) & 0x7FFFFFF0, spr = tag >> 63;
+        int irq = (tag >> 31) & 1;
+        reg[2][0] = (reg[2][0] & 0xFFFF) | (u32)(tag & 0xFFFF0000);
+        u32 next = p3.tadr + 16;
+        const u8 *data = t + 16;
+        switch (id) {
+        case 0: data = mem(addr, spr); next = 0; break;
+        case 1: next = p3.tadr + 16 + qwc * 16; break;
+        case 2: next = addr; break;
+        case 3: case 4: data = mem(addr, spr); next = p3.tadr + 16; break;
+        case 5: if (p3.asp < 2) p3.asr[p3.asp++] = p3.tadr + 16 + qwc * 16; next = addr; break;
+        case 6: next = p3.asp > 0 ? p3.asr[--p3.asp] : 0; break;
+        case 7: next = 0; break;
+        }
+        if (next == 0 || (irq && (reg[2][0] & 0x80))) p3.done = 1;
+        p3.tadr = next;
+        if (data && qwc) { gsrec_data(2, 0, data, qwc * 16); p3.p = data; p3.left = qwc; }
+    }
+    return 1;
 }
+
+/* up to `packets` GIF packets of the held chain (-1: all); at its end, channel 2 is done */
+static void p3_run(int packets) {
+    if (!p3.active) return;
+    while (packets) {
+        if (!p3_fetch()) {
+            p3.active = 0;
+            __atomic_store_n(&gif_held, 0, __ATOMIC_RELEASE);
+            reg[2][0x30 / 4] = p3.tadr;
+            reg[2][0x20 / 4] = 0;
+            if (want_dma_log()) rt_log("dma", "ch2 held chain over");
+            finish(2);
+            return;
+        }
+        int ended = 0;
+        u32 used = gif_dma_packet(p3.p, p3.left, &ended);
+        p3.p += used * 16;
+        p3.left -= used;
+        if (ended && packets > 0) packets--;
+    }
+}
+
+static int p3_whole(void) {
+    static int w = -1;
+    if (w < 0) w = getenv("MSSAGA_PATH3_WHOLE") && atoi(getenv("MSSAGA_PATH3_WHOLE"));
+    return w;
+}
+
+/* VIF1 unmasked path 3 (MSKPATH3 0): the held GIF chain's next packet goes through */
+void dmac_path3_unmasked(void) {
+    if (!p3.active) return;
+    if (want_dma_log()) rt_log("dma", "ch2: path 3 unmasked");
+    p3_run(p3_whole() ? -1 : 1);
+}
+
+/* VIF1 started a VU1 program, or waits for path 3 (FLUSHA, `all`): what path 3 sends meanwhile, if it is open */
+void dmac_path3_open_step(int all) {
+    if (p3.active && !gif_path3_masked) p3_run(all ? -1 : 1);
+}
+
+/* the end of a VIF1 transfer: path 3 open, the rest goes; new path 3 work or the frame's end: the rest in any case */
+void dmac_path3_flush(void) { p3_run(-1); }
 
 static void start(Ctx *c, int ch) {
     u32 *r = reg[ch];
@@ -301,6 +384,10 @@ static void start(Ctx *c, int ch) {
     }
     (void)mod;
     gs_thread_start();
+    if (ch == 2 && p3.active) {                     /* what is left of the last one goes first (once the GS is idle) */
+        while (dmac_gs_busy()) usleep(20);
+        dmac_path3_flush();
+    }
     if (ch == 2 && gif_path3_masked) {
         /* MS Saga: GIF (path 3) while VIF1 has path 3 masked: on the PS2 the data waits in the GIF FIFO until
          * VIF1 unmasks it (MSKPATH3 0 in the channel 1 chain the game starts next); RenderWare starts it, waits
@@ -309,6 +396,9 @@ static void start(Ctx *c, int ch) {
          * GS thread was quick: a deadlock in RenderWare's DMA handler (1 run in 5 froze on the logos). */
         __atomic_store_n(&gif_held, 1, __ATOMIC_RELEASE);
         if (want_dma_log()) rt_log("dma", "ch2 held: path 3 masked");
+        if ((r[0] >> 2 & 3) == 1) {                 /* a chain: walked packet by packet as path 3 opens */
+            p3 = (typeof(p3)){1, r[0x30 / 4], {r[0x40 / 4], r[0x50 / 4]}, (int)((r[0] >> 4) & 3), 0, NULL, 0};
+        } else { transfer(c, ch); finish(ch); __atomic_store_n(&gif_held, 0, __ATOMIC_RELEASE); }
         return;
     }
     if (async && (ch == 1 || ch == 2)) { queue_transfer(ch); return; }

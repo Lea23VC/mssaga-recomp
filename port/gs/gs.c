@@ -695,7 +695,12 @@ typedef struct { u32 bp, bw, psm, x, y, w, h; } UpRect;
 #define MAX_UPRECTS 1024
 static UpRect uprects[MAX_UPRECTS];             /* image uploads (upload_note) */
 static u32 nuprects;
-typedef struct { u64 ckey[3]; u32 w, h, last, used, plain, npics; TexPic *pics; u64 hd_of; } TexEnt;
+typedef struct { u64 ckey[3]; u32 w, h, last, used, plain, npics; TexPic *pics; u64 hd_of, pxname; } TexEnt;
+/* MS Saga: entries by their decoded pixels (pxname, with w and h). The game streams the same pictures again and again
+   into a pool, each time somewhere else in the GS memory, beside other data in the same pages: keyed by the pages, each
+   copy was a new texture (4,000 made of 217 in a minute), the cache filled up and thrashed. Now a texture not known by
+   its pages is decoded and looked up by its pixels before a new one is made (texture_for). */
+static u32 tex_by_pixels[16384];
 static TexEnt tex_ents[GPU_MAX_TEX];
 static u32 tex_free[GPU_MAX_TEX], ntex_free, tex_inited;
 static u64 tex_bytes;
@@ -1083,14 +1088,14 @@ static void find_pictures(TexEnt *e, const u32 *px, u32 tbp, u32 tbw, u32 psm, u
 /* A texture not seen with this content (ckey): decoded from the GS memory into a new entry, or
    replaced (a texture pack's PNG, or a text drawn with the font file), and queued for upload.
    Returns the entry, 0 when there is no room. */
-static u32 texture_new(const u64 ckey[3], u32 tbp, u32 tbw, u32 psm, u32 tw, u32 th, u32 cbp, u32 cpsm, u32 csa) {
+static u32 texture_new(const u64 ckey[3], u32 tbp, u32 tbw, u32 psm, u32 tw, u32 th, u32 cbp, u32 cpsm, u32 csa,
+                       u32 *px, u64 name) {
     u32 idx = tex_alloc(tw, th);
-    if (!idx) return 0;
-    u32 *px = malloc((size_t)tw * th * 4);
-    tex_decode(px, tbp, tbw, psm, tw, th, cbp, cpsm, csa);
+    if (!idx) { free(px); return 0; }
+    tex_ents[idx].pxname = name;
+    tex_by_pixels[(name ^ tw * 31 ^ th * 7) % 16384] = idx;
     /* texture packs (texpack.c): saved, or replaced by a PNG of any size (draws keep using the
        original's size in texels) */
-    u64 name = texpack_name(px, tw, th);
     texpack_dump(name, px, tw, th);
     u32 uw = tw, uh = th, *rp = texpack_find(name, &uw, &uh), rect[4] = {0, 0, 0, 0}, fill = 0;
     int font = 0;
@@ -1168,13 +1173,23 @@ static s32 texture_for(int ctx, u32 *w_out, u32 *h_out) {
     u32 *cs = &tex_by_content[(ckey[0] ^ ckey[1] * 7 ^ ckey[2] * 13) % 16384];
     u32 idx = *cs;
     if (!(idx && tex_ents[idx].used && !memcmp(tex_ents[idx].ckey, ckey, sizeof ckey))) {
-        idx = texture_new(ckey, tbp, tbw, psm, tw, th, cbp, cpsm, csa);
-        if (!idx) return -1;
+        u32 *px = malloc((size_t)tw * th * 4);
+        tex_decode(px, tbp, tbw, psm, tw, th, cbp, cpsm, csa);
+        u64 name = texpack_name(px, tw, th);
+        u32 same = tex_by_pixels[(name ^ tw * 31 ^ th * 7) % 16384];
+        TexEnt *e = &tex_ents[same];
+        if (same && e->used && e->pxname == name && !e->hd_of && e->w == tw && e->h == th && !e->npics) {
+            free(px);                               /* the same picture as one we have: that one */
+            idx = same;
+        } else {
+            idx = texture_new(ckey, tbp, tbw, psm, tw, th, cbp, cpsm, csa, px, name);
+            if (!idx) return -1;
+        }
         *cs = idx;
     }
     tex_ents[idx].last = rec_frame;
     memcpy(f->key, key, sizeof key);
-    memcpy(f->ckey, ckey, sizeof ckey);
+    memcpy(f->ckey, tex_ents[idx].ckey, sizeof ckey);   /* the entry's own: a shared one may have another */
     f->idx = idx;
     MEMO(idx);
 #undef MEMO
@@ -1259,6 +1274,11 @@ static void classify(GpuDraw *d, int type, u32 first) {
         float bottom = d->scissor[3] + 1 < 448 ? (float)(d->scissor[3] + 1) : 448.0f;   /* the PS2's picture height */
         if (y0 <= (float)d->scissor[2] + 0.5f && y1 >= bottom - 0.5f) d->flat2d = 0;
     }
+    /* MS Saga: 3D drawn into a box cut out of the screen (a dialogue portrait, the minimap's view: VU1 with a scissor
+       narrower than the frame) goes with the 2D around it, kept 4:3 */
+    if (gs_cur_path == 1 && type >= 3 && !full_scissor && d->scissor[1] < fw) d->flat2d = 1;
+    /* MS Saga: lines (a portrait's frame, drawn through VU1 with the whole screen as scissor) are 2D too */
+    if ((type == 1 || type == 2) && d->scissor[1] < fw) d->flat2d = 1;
     d->sides = !d->flat2d && (d->tex >= 0 || gs_cur_path == 1) && full_scissor && (x0 < fw / 8.0f || x1 > fw * 7 / 8.0f);
     int fight_on(void);                         /* port/hle/training.c */
     d->fight = d->flat2d && fight_on();
@@ -1742,6 +1762,18 @@ void gif_dma(const u8 *data, u32 qwc) {
     u64 t = perf_stamp();
     gif(&paths[2], data, qwc, 0);
     if (t) perf.gs_ns += perf_since(t);
+}
+
+/* MS Saga: path 3 one packet at a time (dmac.c, path 3 masked between packets): GIF data up to the end of a packet
+   that has EOP set; returns the quadwords used, *ended: that packet is over */
+u32 gif_dma_packet(const u8 *data, u32 qwc, int *ended) {
+    u64 t = perf_stamp();
+    GifState *st = &paths[2];
+    u32 used = gif(st, data, qwc, 1);
+    *ended = st->loops == 0 && (st->tag_lo == 0 || ((st->tag_lo >> 15) & 1));
+    if (*ended) st->tag_lo = 0;
+    if (t) perf.gs_ns += perf_since(t);
+    return used;
 }
 
 /* ------------------------------------------------------------------------------- display */
