@@ -278,7 +278,7 @@ void dmac_gs_flip(void) {
     if (!gpu_on) return;
     gs_thread_start();
     if (async) queue_job(JOB_FLIP);
-    else { dmac_path3_flush(); gpu_seal_frame(); }
+    else { dmac_path3_flush(); gsrec_flip(); gpu_seal_frame(); }
 }
 
 static volatile int gif_held;               /* MS Saga: a GIF transfer waiting for path 3 to be unmasked */
@@ -293,7 +293,7 @@ int dmac_gif_held(void) { return __atomic_load_n(&gif_held, __ATOMIC_ACQUIRE); }
  * held chain is walked as a cursor: one packet at an unmask, one more at each VU1 program started while path 3 is
  * open (time passes on the PS2), the rest at FLUSHA or at the end of the VIF1 transfer while open, and before a
  * new path 3 transfer or the end of the frame in any case (dmac_path3_flush). MSSAGA_PATH3_WHOLE=1: as before. */
-static struct { int active; u32 tadr, asr[2]; int asp, done; const u8 *p; u32 left; } p3;
+static struct { int active; u32 tadr, asr[2]; int asp, done; const u8 *p; u32 left; int first; u32 pkt_qw; } p3;
 
 void gsrec_data(int ch, int tag, const u8 *p, u32 bytes);
 u32 gif_dma_packet(const u8 *data, u32 qwc, int *ended);    /* gs.c */
@@ -344,7 +344,16 @@ static void p3_run(int packets) {
         u32 used = gif_dma_packet(p3.p, p3.left, &ended);
         p3.p += used * 16;
         p3.left -= used;
-        if (ended && packets > 0) packets--;
+        p3.pkt_qw += used;
+        if (ended) {
+            /* the chain's first packet, a lone tag and its register (2 quadwords): on the PS2 the GIF is through it at
+               once and the texture packet behind it starts before the mask closes again; counted, it put every
+               upload of the chain one unmask late (a battle effect's first picture drawn with the textures not there) */
+            int tiny_first = p3.first && p3.pkt_qw <= 2;
+            p3.first = 0;
+            p3.pkt_qw = 0;
+            if (packets > 0 && !tiny_first) packets--;
+        }
     }
 }
 
@@ -397,7 +406,7 @@ static void start(Ctx *c, int ch) {
         __atomic_store_n(&gif_held, 1, __ATOMIC_RELEASE);
         if (want_dma_log()) rt_log("dma", "ch2 held: path 3 masked");
         if ((r[0] >> 2 & 3) == 1) {                 /* a chain: walked packet by packet as path 3 opens */
-            p3 = (typeof(p3)){1, r[0x30 / 4], {r[0x40 / 4], r[0x50 / 4]}, (int)((r[0] >> 4) & 3), 0, NULL, 0};
+            p3 = (typeof(p3)){1, r[0x30 / 4], {r[0x40 / 4], r[0x50 / 4]}, (int)((r[0] >> 4) & 3), 0, NULL, 0, 1, 0};
         } else { transfer(c, ch); finish(ch); __atomic_store_n(&gif_held, 0, __ATOMIC_RELEASE); }
         return;
     }

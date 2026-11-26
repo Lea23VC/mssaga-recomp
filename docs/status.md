@@ -1,17 +1,18 @@
 # Status
 
-## Known issue: one-picture glitch when a battle effect first appears (2026-11-26) — cause found, not fixed
+## Battle effects' first picture fixed: a texture chain's tiny first packet passes with the next (2026-11-26)
 
-On a counterattack (Zaku, Iron Axe) the first picture of the hit effect shows a pale rectangle with scattered blocks
-around the hit (F9 clip at vblank 5900, picture 72); the next picture is right. Same in 4:3 and with the software GS:
-not widescreen. With a temporary log (uploads: BITBLTBUF/TRXDIR host-to-local; draws: TEX0) on the replay: in that
-picture the effect's draws use `3AA0` (20 draws) and `3AC0` (the flash) **before** their path-3 uploads land
-(3AA0 32x32 + CLUT 3ABC; 3AC0 in five pieces: 32x32, 16x16, 8x8, 8x4, 16x16, CLUT 3ADC), so they read what was there
-before. A picture later the same addresses hold the right data. Suspect: the path-3 cursor (`dmac.c`: one GIF packet
-per MSKPATH3 0, one per MSCAL while open, the rest at FLUSHA / end of the VIF1 transfer) lets a multi-packet upload
-through too slowly when an effect's textures arrive all at once. Next: see where in the VIF1 stream these uploads
-are unmasked relative to the MSCALs that draw with them, and what the PS2 does there (path 3 runs whenever path 1
-is idle while unmasked, not one packet per event).
+On a counterattack (Zaku, Iron Axe) the first picture of the hit effect showed a pale rectangle with scattered blocks
+around the hit; the next picture was right. Same in 4:3 and with the software GS. A live log of one F9 clip (path 3
+unmasks, VU1 program starts, uploads, draws, in order, with the GS run in step: `MSSAGA_GSTHREAD=0`) showed every
+texture of a battle's chain arriving one unmask late: RenderWare's GIF chain has one packet per draw that may need a
+texture (a lone one-register tag when it is already in memory), but starts with one extra lone tag; the path-3 cursor
+let one packet through per MSKPATH3 0, so the first unmask sent only that tag. Steady state hid it (the same textures
+each picture); a new effect's first picture read what was there before. `dmac.c` p3_run: the chain's first packet,
+when it is 2 quadwords or less, does not count (on the PS2 the GIF is through it at once, and the next packet starts
+before the mask closes). The GM-flicker case (the paused hangar cutscene from the player's presses) stays still in
+every picture, as before. Played: two battles, no rectangle. Also: the recorder (F9) now works with
+`MSSAGA_GSTHREAD=0` too (the flip there skipped it).
 
 ## Idea for later: settings inside the game (2026-11-26)
 
