@@ -513,6 +513,7 @@ static void portrait_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
     for (u32 i = 0; i < f->ndraws && nbox < MAXP; i++) {
         const GpuDraw *d = &f->draws[i];
         if (!d->box || d->scissor[2] >= 180) continue;
+        if (d->scissor[3] - d->scissor[2] >= 300) continue;     /* the screen's height: a split scene's half, not a portrait */
         u32 k = 0;
         while (k < nbox && memcmp(box[k], d->scissor, sizeof box[k])) k++;
         if (k < nbox) continue;

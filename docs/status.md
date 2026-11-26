@@ -1,5 +1,19 @@
 # Status
 
+## 16:9: split-screen scenes stay 4:3 (2026-11-26) — to do: make them 16:9
+
+The cutscene where the soldier talks to Tristan ("So you're a tough guy, huh?", ~vblank 5800 from NEW GAME) is two
+cameras drawn into two full-height boxes, a left half (scissor x 0-287) and a right half (224-511) cut by a slanted
+line. The portrait rule (gpu_vk.c portrait_shifts) took them for two portraits and pushed them to the screen's edges:
+a black wedge in the middle and the text box cut. Boxes as tall as the screen (300+ lines) are no longer moved: the
+scene now shows as in 4:3, with the sides black or `sides.png`.
+
+**To do (decided to leave for now):** show such scenes in 16:9. Each half's camera draws into a raster 288 wide, so
+widescreen.c keeps its 4:3 view (boxed: raster under 400 wide), and gs.c marks its VU1 draws `box` (kept 4:3). For a
+full-height box, the camera could get the 4:3 x 4/3 view like a full-screen one and its draws go with the 3D
+(stretched): each half would reach its own edge of the 16:9 screen and the split stay where it is. Not done yet
+because other scenes may draw full-height boxes for other things; check them (F9 clips) before changing it.
+
 ## 16:9: fades between scenes fill the screen (2026-11-26)
 
 After a skipped cutscene the game clears the screen to white (in 32-pixel strips) and fades the next scene in from
