@@ -1,5 +1,17 @@
 # Status
 
+## Idea for later: settings inside the game (2026-11-26)
+
+Asked: switching widescreen (and the other F-key settings) from a menu instead of keys. Two ways, not started:
+- **The game's own Config menu.** It is in the `sub` DLL (`ConfigWindowOpen` D_sub_010338, `ConfigWindowGetStat`,
+  `ConfigWindowGetCursorPos`: thin wrappers; the item list, drawing, cursor and value changes are in unnamed
+  functions around them). Adding a line needs its item table, its texts (probably a message file in the AFS, drawn
+  with the game's font), cursor bounds and box size; the value kept in the port's settings, not on the memory card.
+  Several sessions of reverse-engineering. Easier if an existing entry means nothing on PC and can be taken over:
+  look at what Config holds first.
+- **The port's own overlay menu** (a key or Select+Start held): widescreen, window, V-Sync, Discord in one list,
+  drawn like the F3 panel (`gpu_set_overlay`); about a day, works with a gamepad. Suggested first.
+
 ## 16:9: split-screen scenes stay 4:3 (2026-11-26) — to do: make them 16:9
 
 The cutscene where the soldier talks to Tristan ("So you're a tough guy, huh?", ~vblank 5800 from NEW GAME) is two
