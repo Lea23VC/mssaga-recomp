@@ -1,5 +1,30 @@
 # Status
 
+## Flicker on the GM fixed: path 3 one packet at a time; texture cache by pixels; 16:9 portraits (2026-11-26)
+
+**Flicker** (the GM's armour, visor, arm flashing in the cutscene where it first appears, more after quick skips):
+RenderWare streams its textures through a pool in the GS memory and trickles the uploads in with VIF1's MSKPATH3:
+the GIF chain (path 3) starts masked, and the VIF1 chain unmasks and masks again around draws (MSKPATH3 0, MSKPATH3 1),
+which on the PS2 lets one GIF packet through (the mask acts at the end of a packet). The port ran the whole held chain
+at the first unmask: 39 uploads at once, overwriting pool slots still used by the draws that followed (same TEX0,
+another picture, one frame in five). `dmac.c` now walks a held path 3 chain as a cursor: one packet at an unmask, one
+more at each VU1 program started while open, the rest at FLUSHA / the end of the VIF1 transfer while open, and before
+a new path 3 transfer or the frame's end in any case. `MSSAGA_PATH3_WHOLE=1` restores the old behaviour. Found by
+recording the player's pad (their path, Circle to confirm, START to skip, filled the cache; mine never did), replaying
+it headless, and comparing each draw's texture across paused frames. Ruled out on the way: widescreen, incomplete
+frames, GPU synchronisation, the CLUT buffer (CLD; emulating it changed nothing here), frame skipping.
+
+**Texture cache**: textures were keyed by the GS memory pages they read; the pool put the same picture beside other
+data each time, so each copy was a new texture (4,025 made of 217 in under a minute), the 256 MB cache filled and
+thrashed (~240 textures dropped and remade per second). A texture not known by its pages is now decoded and looked up
+by its pixels (`tex_by_pixels`) before a new one is made: 234 made, none dropped, in the same replay.
+
+**16:9 portraits**: dialogue portraits and the minimap's view are 3D drawn into a box of the screen (a sub-raster).
+Their cameras keep their view window (only cameras drawing the 512-wide screen are widened; decided at
+RwCameraBeginUpdate, which also makes F2 take effect at once), VU1 draws with a scissor narrower than the frame and
+lines (the portrait's frame) are kept 4:3 with the 2D. Asked for: portraits anchored to the screen's left / right edge
+in 16:9 (the text box stays centred), not done yet.
+
 ## Discord status (2026-11-25)
 
 `port/runtime/discord.c`: the Discord app's local IPC (unix socket `discord-ipc-N`, Windows named pipe), no library.

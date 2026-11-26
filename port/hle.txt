@@ -60,3 +60,4 @@
 # Frame rate: RenderWare's minimum vertical blanks per frame (port/hle/fps.c)
 0x001C73E8 hle_rwDMAMinVsyncCntSet
 0x0010F158 hle_SYS_VsyncWakeUp
+0x001B89F8 hle_RwCameraBeginUpdate before
