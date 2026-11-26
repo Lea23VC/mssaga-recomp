@@ -22,7 +22,9 @@ Nothing from the game is in this repository or in its releases. You need your ow
   turns it off.
 - **Keys:** arrows, Z/X/A/S = Cross/Circle/Square/Triangle, Q/W/E/R = L1/R1/L2/R2, Enter = Start,
   Backspace = Select. F1 window size, F2 widescreen, F3 performance panel, F4 V-Sync, F9 records the next few
-  seconds of graphics for a bug report (`gsrec_*.gsrec` in the settings folder). A gamepad works as a DualShock 2.
+  seconds of graphics for a bug report (`gsrec_*.gsrec` in the settings folder; started with
+  `MSSAGA_GSREC_BACK=5`, it keeps the last 5 seconds in memory and F9 saves those too, to catch a glitch after
+  seeing it). A gamepad works as a DualShock 2.
 - **Widescreen sides:** screens drawn only in 4:3 (menus, title) have black sides; a picture of your own named
   `sides.png` in the settings folder is shown there instead (dimmed, its top part).
 

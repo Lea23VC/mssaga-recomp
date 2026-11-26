@@ -1,5 +1,15 @@
 # Status
 
+## F9 can save the seconds before it (2026-11-26)
+
+`MSSAGA_GSREC_BACK=<seconds>` (up to 20; off by default): the recorder keeps a ring of one-second segments in memory,
+each a snapshot of the GS / VIF1 / VU1 state taken at its first picture and everything the GS was given since. F9 then
+writes the oldest kept snapshot and all the segments after it, and records one second more (`gsrec.c`; the state
+functions now write through `gsrec_io`, a file or a buffer). 5 seconds: the game peaked at ~224 MB. Saving writes
+the clip at once (a short pause). Tested: F9 during the logos replays from the Bandai logo 5 s before; in play, the
+name entry's cursor moving in the seconds before each press. `MSSAGA_F9_AT=<vblank>` presses F9 once there, for
+scripted tests.
+
 ## Battle effects' first picture fixed: a texture chain's tiny first packet passes with the next (2026-11-26)
 
 On a counterattack (Zaku, Iron Axe) the first picture of the hit effect showed a pale rectangle with scattered blocks

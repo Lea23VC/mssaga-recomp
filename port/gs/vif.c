@@ -166,7 +166,7 @@ void vif_stats(void) {
 }
 
 /* gsrec.c: VIF1's state saved (save = 1) or loaded. */
+void gsrec_io(FILE *f, void *p, size_t n, int save);   /* gsrec.c */
 void vif_state_io(FILE *f, int save) {
-    if (save) fwrite(&vifs[1], sizeof vifs[1], 1, f);
-    else if (fread(&vifs[1], sizeof vifs[1], 1, f) != 1) memset(vifs[1].counts, 0, sizeof vifs[1].counts);
+    gsrec_io(f, &vifs[1], sizeof vifs[1], save);
 }

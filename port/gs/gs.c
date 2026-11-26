@@ -1858,8 +1858,9 @@ void gs_dump_vram(u32 *out) {
 }
 
 /* gsrec.c: the GS's state saved (save = 1) or loaded, for a recording replayed off line. */
+void gsrec_io(FILE *f, void *p, size_t n, int save);   /* gsrec.c */
 void gs_state_io(FILE *f, int save) {
-#define IO(p, n) (save ? (void)fwrite(p, 1, n, f) : (void)!fread(p, 1, n, f))
+#define IO(p, n) gsrec_io(f, p, n, save)   /* a file, or a snapshot in memory (gsrec.c) */
     IO(&gs, sizeof gs);
     IO(vram, sizeof vram);
     IO(page_gen, sizeof page_gen);

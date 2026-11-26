@@ -21,6 +21,11 @@
  * as a window that size shows them): the same recording drawn by two builds of the renderer must
  * give the same pictures, which a fight played twice never does.
  *
+ * MS Saga: F9 records the next 150 pictures into the settings folder (gsrec_<vblank>.gsrec). With
+ * MSSAGA_GSREC_BACK=<seconds> (up to 20) the last seconds are kept in memory all the time (a state snapshot each
+ * second and what the GS was given since: ~25 MB a second), and F9 saves them and one second more: a glitch seen
+ * can still be caught after it happened.
+ *
  * MS Saga: MSSAGA_REPLAY_SW=1 with MSSAGA_REPLAY_SHOTS: drawn by the software GS instead (into the GS memory, as the
  * PS2 does), the picture shown at each flip saved as sw_NNNN.ppm: the same frames through both renderers.
  */
@@ -53,22 +58,93 @@ static FILE *out;
 static int state = -1;          /* -1 not set up, 0 off or done, 1 waiting for the start, 2 recording */
 static u32 from, frames, recorded;
 
-static void put(u32 kind, const void *p, u32 bytes) {
-    u32 head[4] = {kind, bytes, 0, 0};
-    fwrite(head, sizeof head, 1, out);
-    if (bytes) {
-        static const u8 zero[16];
-        fwrite(p, 1, bytes, out);
-        if (bytes & 15) fwrite(zero, 1, 16 - (bytes & 15), out);   /* the data stays 16-byte aligned */
+/* MS Saga: a growing buffer in memory (the ring of the last seconds) */
+typedef struct { u8 *p; size_t len, cap; } Buf;
+static void buf_add(Buf *b, const void *p, size_t n) {
+    if (b->len + n > b->cap) {
+        size_t cap = b->cap ? b->cap : (1u << 20);
+        while (cap < b->len + n) cap *= 2;
+        u8 *q = realloc(b->p, cap);
+        if (!q) return;
+        b->p = q;
+        b->cap = cap;
     }
+    memcpy(b->p + b->len, p, n);
+    b->len += n;
+}
+
+static Buf *snap_to;            /* where gsrec_io writes when given no file */
+
+/* the GS / VIF1 / VU1 state functions read and write through this: a file, or (f NULL) the snapshot being taken */
+void gsrec_io(FILE *f, void *p, size_t n, int save) {
+    if (!n) return;
+    if (f) { if (save) fwrite(p, 1, n, f); else if (fread(p, 1, n, f) != n) memset(p, 0, n); }
+    else if (save && snap_to) buf_add(snap_to, p, n);
+}
+
+/* one event, to the recording file or to a buffer of the ring */
+static void put_to(FILE *o, Buf *b, u32 kind, const void *p, u32 bytes) {
+    u32 head[4] = {kind, bytes, 0, 0};
+    static const u8 zero[16];
+    u32 pad = bytes & 15 ? 16 - (bytes & 15) : 0;   /* the data stays 16-byte aligned */
+    if (o) {
+        fwrite(head, sizeof head, 1, o);
+        if (bytes) { fwrite(p, 1, bytes, o); fwrite(zero, 1, pad, o); }
+    } else {
+        buf_add(b, head, sizeof head);
+        if (bytes) { buf_add(b, p, bytes); buf_add(b, zero, pad); }
+    }
+}
+
+static void put(u32 kind, const void *p, u32 bytes) { put_to(out, NULL, kind, p, bytes); }
+
+/* MS Saga: the ring of the last seconds (MSSAGA_GSREC_BACK): segments of one second, each a state snapshot taken at
+   its first picture and the events since */
+#define SEG_PICTURES 30
+#define MAX_SEGS 22
+static struct { Buf snap, ev; int used; } segs[MAX_SEGS];
+static int nsegs, seg_cur = -1, seg_pics, ring_on = -1;
+
+static void ring_event(u32 kind, const void *p, u32 bytes) {
+    if (seg_cur >= 0) put_to(NULL, &segs[seg_cur].ev, kind, p, bytes);
+}
+
+static void ring_new_segment(void) {
+    seg_cur = (seg_cur + 1) % nsegs;
+    segs[seg_cur].snap.len = segs[seg_cur].ev.len = 0;
+    snap_to = &segs[seg_cur].snap;
+    gs_state_io(NULL, 1);
+    vif_state_io(NULL, 1);
+    vu_state_io(NULL, 1);
+    snap_to = NULL;
+    segs[seg_cur].used = 1;
+    seg_pics = 0;
+}
+
+/* F9 with the ring: the oldest kept second's snapshot, then everything since, into the file; it goes on from there */
+static void ring_save(FILE *o) {
+    int oldest = (seg_cur + 1) % nsegs;
+    while (!segs[oldest].used) oldest = (oldest + 1) % nsegs;
+    fwrite(segs[oldest].snap.p, 1, segs[oldest].snap.len, o);
+    int pics = 0;
+    for (int k = oldest;; k = (k + 1) % nsegs) {
+        fwrite(segs[k].ev.p, 1, segs[k].ev.len, o);
+        pics += k == seg_cur ? seg_pics : SEG_PICTURES;
+        if (k == seg_cur) break;
+    }
+    rt_log("gsrec", "saved the last %d pictures (%.1f s)", pics, pics / 30.0);
+    for (int k = 0; k < nsegs; k++) segs[k].used = 0;
+    seg_cur = -1;
 }
 
 /* dmac.c, on the GS thread: data given to VIF1 or the GIF, or VIF codes in a tag */
 void gsrec_data(int ch, int tag, const u8 *p, u32 bytes) {
-    if (state != 2 || !p) return;
-    if (tag) { if (ch == 1) put(EV_VIFTAG, p, 8); }
-    else if (ch == 1) put(EV_VIF1, p, bytes);
-    else if (ch == 2) put(EV_GIF, p, bytes);
+    if (!p) return;
+    u32 kind = tag ? (ch == 1 ? EV_VIFTAG : 0) : ch == 1 ? EV_VIF1 : ch == 2 ? EV_GIF : 0;
+    if (!kind) return;
+    if (tag) bytes = 8;
+    if (state == 2) put(kind, p, bytes);
+    else if (ring_on > 0) ring_event(kind, p, bytes);
 }
 
 /* F9 (display.c): the next 150 pictures recorded now, into gsrec_<vblank>.gsrec in the settings folder (for bug
@@ -87,6 +163,19 @@ void gsrec_flip(void) {
         from = getenv("MSSAGA_GSREC_FROM") ? (u32)atoi(getenv("MSSAGA_GSREC_FROM")) : 9000;
         frames = getenv("MSSAGA_GSREC_FRAMES") ? (u32)atoi(getenv("MSSAGA_GSREC_FRAMES")) : 150;
     }
+    if (ring_on < 0) {
+        const char *e = getenv("MSSAGA_GSREC_BACK");
+        int secs = e ? atoi(e) : 0;
+        if (secs > MAX_SEGS - 2) secs = MAX_SEGS - 2;
+        ring_on = secs > 0;
+        nsegs = secs + 1;                               /* the second being filled, and `secs` full ones */
+        if (ring_on) rt_log("gsrec", "keeping the last %d seconds for F9", secs);
+    }
+    {                                                   /* MSSAGA_F9_AT=vblank: F9 pressed there (scripted tests) */
+        static int at = -2;
+        if (at == -2) at = getenv("MSSAGA_F9_AT") ? atoi(getenv("MSSAGA_F9_AT")) : -1;
+        if (at >= 0 && kernel_vblank_count() >= (u32)at) { requested = 1; at = -1; }
+    }
     if (requested && state != 2) {
         requested = 0;
         char name[64];
@@ -102,6 +191,22 @@ void gsrec_flip(void) {
         from = 0;
         recorded = 0;
         state = 1;
+        if (ring_on > 0 && seg_cur >= 0) {             /* the last seconds, then one more */
+            if (!(out = fopen(path, "wb"))) { state = 0; return; }
+            fwrite(magic, sizeof magic, 1, out);
+            ring_save(out);
+            frames = SEG_PICTURES;
+            state = 2;
+            rt_log("gsrec", "recording into %s", path);
+            return;
+        }
+    }
+    if (ring_on > 0 && state != 2) {                    /* the ring: a new second, or this picture into it */
+        if (seg_cur < 0 || seg_pics >= SEG_PICTURES) ring_new_segment();
+        u64 priv[5];
+        for (int k = 0; k < 5; k++) priv[k] = gs_priv_read(priv_regs[k]);
+        ring_event(EV_FLIP, priv, sizeof priv);
+        seg_pics++;
     }
     if (state == 1 && kernel_vblank_count() >= from) {
         if (!(out = fopen(path, "wb"))) { state = 0; return; }
@@ -121,6 +226,7 @@ void gsrec_flip(void) {
         fclose(out);
         out = NULL;
         state = 0;
+        frames = getenv("MSSAGA_GSREC_FRAMES") ? (u32)atoi(getenv("MSSAGA_GSREC_FRAMES")) : 150;
         rt_log("gsrec", "recording done");
     }
 }

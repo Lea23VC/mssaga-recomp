@@ -298,8 +298,9 @@ void vu_stats(void) {
 }
 
 /* gsrec.c: VU1's state and memories saved (save = 1) or loaded. */
+void gsrec_io(FILE *f, void *p, size_t n, int save);   /* gsrec.c */
 void vu_state_io(FILE *f, int save) {
-#define IO(p, n) (save ? (void)fwrite(p, 1, n, f) : (void)!fread(p, 1, n, f))
+#define IO(p, n) gsrec_io(f, p, n, save)   /* a file, or a snapshot in memory (gsrec.c) */
     Vu *v = &vus[1];
     u8 *mem = v->mem, *code = v->code;
     IO(v, sizeof *v);
