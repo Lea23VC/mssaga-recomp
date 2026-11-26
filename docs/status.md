@@ -1,5 +1,18 @@
 # Status
 
+## Known issue: one-picture glitch when a battle effect first appears (2026-11-26) — cause found, not fixed
+
+On a counterattack (Zaku, Iron Axe) the first picture of the hit effect shows a pale rectangle with scattered blocks
+around the hit (F9 clip at vblank 5900, picture 72); the next picture is right. Same in 4:3 and with the software GS:
+not widescreen. With a temporary log (uploads: BITBLTBUF/TRXDIR host-to-local; draws: TEX0) on the replay: in that
+picture the effect's draws use `3AA0` (20 draws) and `3AC0` (the flash) **before** their path-3 uploads land
+(3AA0 32x32 + CLUT 3ABC; 3AC0 in five pieces: 32x32, 16x16, 8x8, 8x4, 16x16, CLUT 3ADC), so they read what was there
+before. A picture later the same addresses hold the right data. Suspect: the path-3 cursor (`dmac.c`: one GIF packet
+per MSKPATH3 0, one per MSCAL while open, the rest at FLUSHA / end of the VIF1 transfer) lets a multi-packet upload
+through too slowly when an effect's textures arrive all at once. Next: see where in the VIF1 stream these uploads
+are unmasked relative to the MSCALs that draw with them, and what the PS2 does there (path 3 runs whenever path 1
+is idle while unmasked, not one packet per event).
+
 ## Idea for later: settings inside the game (2026-11-26)
 
 Asked: switching widescreen (and the other F-key settings) from a menu instead of keys. Two ways, not started:
