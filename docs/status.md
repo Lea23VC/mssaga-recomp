@@ -1,5 +1,18 @@
 # Status
 
+## Dotted squares in the hangar cutscene fixed: sprites take each corner's own Q (2026-11-26)
+
+The glows of the first hangar cutscene (orange lights at the pipe ends, a blue glow) showed as dotted squares with the
+GPU renderer. They are additive sprites whose first vertex has Q 1 (S, T 1) and whose second keeps the Q of the 3D
+drawn before (~0.01) with S, T 0. The GPU path took the second vertex's Q for the whole sprite: S/Q up to ~100, the
+glow repeated a hundred times. Now a sprite's corners are each divided by their own Q and drawn with Q 1 (gs.c,
+put_prim); sprites with one Q are unchanged.
+
+Found with the GS recorder, now usable: `MSSAGA_GSREC=file MSSAGA_GSREC_FROM=vb MSSAGA_GSREC_FRAMES=n` records,
+`mssaga --gs-replay file [warm]` replays (wired into main.c); with `MSSAGA_REPLAY_SHOTS=dir` the replay draws with the
+GPU renderer, adding `MSSAGA_REPLAY_SW=1` with the software GS (sw_NNNN.ppm at each flip): the same frames through both.
+`MSSAGA_REPLAY_DUMP=n` lists frame n's textured draws.
+
 ## Flicker on the GM fixed: path 3 one packet at a time; texture cache by pixels; 16:9 portraits (2026-11-26)
 
 **Flicker** (the GM's armour, visor, arm flashing in the cutscene where it first appears, more after quick skips):

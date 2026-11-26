@@ -1220,6 +1220,16 @@ static void put_prim(int type, const Vertex *v, u32 zs, int gouraud, int fst) {
         break;
     }
     case 6: {                                   /* sprite: corners from the two vertices */
+        /* MS Saga: each corner's own S/Q, T/Q, and Q 1 for the sprite. The game's glows (additive sprites) give the first
+           vertex Q 1 and S, T 1 but leave the second with the Q of the 3D drawn before (0.01) and S, T 0: taking that Q
+           for the whole sprite repeated the glow a hundred times across it (dotted squares in the hangar's cutscene). */
+        Vertex c2[2] = {v[0], v[1]};
+        if (!fst)
+            for (int i = 0; i < 2; i++) {
+                if (c2[i].q != 0.0f) { c2[i].s /= c2[i].q; c2[i].t /= c2[i].q; }
+                c2[i].q = 1.0f;
+            }
+        v = c2;
         Vertex q[4] = {v[0], v[1], v[0], v[1]};
         q[2].x = v[1].x; q[2].s = v[1].s; q[2].u = v[1].u;          /* top right */
         q[3].x = v[0].x; q[3].s = v[0].s; q[3].u = v[0].u;          /* bottom left */

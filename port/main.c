@@ -214,6 +214,10 @@ int main(int argc, char **argv) {
     /* SDL's SIGINT/SIGTERM handlers only queue a quit event, which --shot never reads: `timeout` and Ctrl+C
      * could not stop a test run. Keep the default signals (the window still closes with its close button). */
     SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
+    if (argc >= 3 && !strcmp(argv[1], "--gs-replay")) {   /* a GS recording drawn again (port/gs/gsrec.c) */
+        int gsrec_replay(const char *path, int warm);
+        return gsrec_replay(argv[2], argc >= 4 ? atoi(argv[3]) : 30);
+    }
     const char *elf = NULL, *iso = NULL, *gen_vu = NULL;
     int shots[64], nshots = 0;
     for (int i = 1; i < argc; i++) {

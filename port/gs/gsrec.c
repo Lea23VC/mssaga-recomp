@@ -9,7 +9,7 @@
  * is saved, then everything the GS thread is given (VIF1 and GIF DMA data, VIF codes in DMA tags,
  * pictures shown) for n pictures.
  *
- *     mssaga --gs-replay (not wired into port/main.c yet) file [warm]
+ *     mssaga --gs-replay file [warm]
  *
  * runs it all again on this thread, without the game, and says how long the frames after the first
  * `warm` (30) pictures shown took (the game shows a picture more than once a frame: a frame is what
@@ -20,6 +20,9 @@
  * there (frame_NNNN.ppm, every MSSAGA_REPLAY_EVERY-th frame, 10 if not given; MSSAGA_SHOT_PRESENT=WxH:
  * as a window that size shows them): the same recording drawn by two builds of the renderer must
  * give the same pictures, which a fight played twice never does.
+ *
+ * MS Saga: MSSAGA_REPLAY_SW=1 with MSSAGA_REPLAY_SHOTS: drawn by the software GS instead (into the GS memory, as the
+ * PS2 does), the picture shown at each flip saved as sw_NNNN.ppm: the same frames through both renderers.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,6 +41,7 @@ void gs_state_io(FILE *f, int save);
 void vif_state_io(FILE *f, int save);
 void vu_state_io(FILE *f, int save);
 void gs_init(void);
+int gs_display(u32 *out, int max_w, int max_h, int *w, int *h);   /* gs.c */
 u32 kernel_vblank_count(void);
 
 enum { EV_VIF1 = 1, EV_GIF, EV_VIFTAG, EV_FLIP };
@@ -164,11 +168,12 @@ int gsrec_replay(const char *path, int warm) {
         return 1;
     }
     extern int gpu_on;
-    gpu_on = 1;                 /* recorded for the GPU, as in the game (drawn only for MSSAGA_REPLAY_SHOTS) */
+    int sw = getenv("MSSAGA_REPLAY_SW") && atoi(getenv("MSSAGA_REPLAY_SW"));
+    gpu_on = !sw;               /* recorded for the GPU, as in the game (drawn only for MSSAGA_REPLAY_SHOTS) */
     const char *shots = getenv("MSSAGA_REPLAY_SHOTS");
     u32 every = getenv("MSSAGA_REPLAY_EVERY") ? (u32)atoi(getenv("MSSAGA_REPLAY_EVERY")) : 10;
     if (!every) every = 1;
-    if (shots && (!SDL_Init(SDL_INIT_VIDEO) || gpu_init(NULL))) { fprintf(stderr, "no GPU for MSSAGA_REPLAY_SHOTS\n"); return 1; }
+    if (shots && !sw && (!SDL_Init(SDL_INIT_VIDEO) || gpu_init(NULL))) { fprintf(stderr, "no GPU for MSSAGA_REPLAY_SHOTS\n"); return 1; }
     gs_init();
     gs_state_io(f, 0);
     vif_state_io(f, 0);
@@ -197,12 +202,54 @@ int gsrec_replay(const char *path, int warm) {
         case EV_FLIP: {
             if (bytes >= 40)                    /* (recordings made before 2026-11-08 don't have them) */
                 for (int k = 0; k < 5; k++) { u64 v; memcpy(&v, p + 8 * k, 8); gs_priv_write(priv_regs[k], v); }
+            if (sw) {                           /* the software GS: the picture shown now */
+                static u32 nflip, *px;
+                if (!px) px = malloc(1024 * 1024 * 4);
+                int w = 0, hh = 0;
+                if (shots && nflip % every == 0 && (gs_display(px, 1024, 1024, &w, &hh), w && hh)) {
+                    char file[1100];
+                    snprintf(file, sizeof file, "%s/sw_%04u.ppm", shots, nflip);
+                    FILE *o = fopen(file, "wb");
+                    if (o) {
+                        fprintf(o, "P6\n%d %d\n255\n", w, hh);
+                        for (int k = 0; k < w * hh; k++) { u8 rgb[3] = {(u8)px[k], (u8)(px[k] >> 8), (u8)(px[k] >> 16)}; fwrite(rgb, 1, 3, o); }
+                        fclose(o);
+                    }
+                }
+                nflip++;
+                pictures++;
+                break;
+            }
             gpu_seal_frame();
             GpuFrame *fr;
             double th = now_ms();
             while ((fr = gpu_next_frame())) {
-                if (pictures >= (u32)warm) { h = hash_frame(h, fr); draws += fr->ndraws; sealed++; }
                 static u32 nframe;
+                if (pictures >= (u32)warm) { h = hash_frame(h, fr); draws += fr->ndraws; sealed++; }
+                {   /* MSSAGA_REPLAY_DUMP=n: frame n's textured draws (texture, size, place, blending) */
+                    static int dump = -2;
+                    if (dump == -2) dump = getenv("MSSAGA_REPLAY_DUMP") ? atoi(getenv("MSSAGA_REPLAY_DUMP")) : -1;
+                    if ((int)nframe == dump)
+                        for (u32 k = 0; k < fr->ndraws; k++) {
+                            const GpuDraw *d = &fr->draws[k];
+                            if (!d->textured) continue;
+                            float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
+                            for (u32 q = d->first; q < d->first + d->count; q++) {
+                                const GpuVertex *v = &fr->verts[q];
+                                x0 = v->x < x0 ? v->x : x0; x1 = v->x > x1 ? v->x : x1;
+                                y0 = v->y < y0 ? v->y : y0; y1 = v->y > y1 ? v->y : y1;
+                            }
+                            const GpuVertex *v = &fr->verts[d->first];
+                            printf("draw %u: tex %d %ux%u verts %u at %.0f-%.0f x %.0f-%.0f rgba %.0f,%.0f,%.0f,%.0f st %.3f,%.3f q %.3f "
+                                   "fst %u abe %u alpha %llx tfx %u tcc %u filter %u flat2d %u fbp %X\n",
+                                   k, d->tex, d->tw, d->th, d->count, x0, x1, y0, y1, v->r, v->g, v->b, v->a, v->s, v->t, v->q,
+                                   d->fst, d->abe, (unsigned long long)d->alpha, d->tfx, d->tcc, d->filter, d->flat2d, d->fbp);
+                            if (((d->alpha) & 0xFF) == 0x48)
+                                for (u32 q = d->first; q < d->first + d->count; q++)
+                                    printf("   v %.1f,%.1f s %.4f t %.4f q %.4f\n", fr->verts[q].x, fr->verts[q].y, fr->verts[q].s,
+                                           fr->verts[q].t, fr->verts[q].q);
+                        }
+                }
                 if (shots) {
                     gpu_upload(fr);                         /* every frame drawn: the picture shown is often */
                     gpu_render(fr, NULL);                   /* the one drawn the frame before (double buffering) */
