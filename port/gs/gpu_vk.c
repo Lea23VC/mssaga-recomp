@@ -46,7 +46,7 @@ static SDL_GPUTransferBuffer *vxfer;
 static u32 vxfer_size;
 static SDL_GPUGraphicsPipeline *present_pipe, *overlay_pipe;
 
-typedef struct { u32 key; SDL_GPUTexture *tex; int sides, shows; } Target;   /* sides: last frame drew a picture at the 16:9 sides; shows: any 2D (not only a clear) */
+typedef struct { u32 key; SDL_GPUTexture *tex; int sides, shows; } Target;   /* sides: last frame drew a picture at the 16:9 sides; shows: and 2D (not only a clear) */
 static Target colors[MAX_RT], depths[MAX_RT];
 static int ncolors, ndepths;
 
@@ -405,6 +405,13 @@ static u32 txfer_size;              /* texture uploads since the last stats line
    whole width over 3D reaching the sides: a band, a fade or a flash meant to cover the screen, it
    is stretched to 16:9 with the 3D (on a picture of only 2D, a title or an illustration, it stays
    4:3 and the sides are filled by present_into). */
+/* a draw covering the whole frame (a clear: in strips, so the draw's vertices from edge to edge) */
+static int drawn_rect_full(const GpuDraw *d, const GpuVertex *v) {
+    float x0 = 1e9f, x1 = -1e9f;
+    for (u32 q = d->first; q < d->first + d->count; q++) { x0 = fminf(x0, v[q].x); x1 = fmaxf(x1, v[q].x); }
+    return x0 <= 0.5f && x1 >= (float)(d->fbw * 64) - 0.5f;
+}
+
 static int frame_wide_3d(const GpuFrame *f) {
     for (u32 i = 0; i < f->ndraws; i++)
         if (f->draws[i].sides) return 1;
@@ -925,7 +932,10 @@ static void frame_logs(const GpuFrame *f) {
 }
 
 /* A recorded frame drawn on the GPU (verts: NULL, or the vertices moved for an interpolated frame). */
+static u32 frames_rendered;             /* pictures the game drew: the clock of the sides.png switch */
+
 void gpu_render(GpuFrame *f, const GpuVertex *verts) {
+    frames_rendered++;
     if (want_scale && want_scale != scale) rescale(want_scale);
     if (!dev || !f || !f->ndraws) return;
     if (inflight[inflight_at]) {
@@ -945,15 +955,17 @@ void gpu_render(GpuFrame *f, const GpuVertex *verts) {
     r.wide_2d = frame_wide_2d(f);
     r.fbp = r.zbp = ~0u;
     u32 drawn[MAX_RT];                  /* frame buffers drawn in this frame, and whether at the sides */
-    int drawn_sides[MAX_RT], drawn_2d[MAX_RT], ndrawn = 0;
+    int drawn_sides[MAX_RT], drawn_2d[MAX_RT], drawn_other[MAX_RT], ndrawn = 0;
     for (u32 i = 0; i < f->ndraws; i++) {
         GpuDraw *d = &f->draws[i];
         SDL_GPUTexture *color = target(colors, &ncolors, d->fbp, 0);
         int k = 0;
         while (k < ndrawn && drawn[k] != d->fbp) k++;
-        if (k == ndrawn && ndrawn < MAX_RT) { drawn[k] = d->fbp; drawn_sides[k] = drawn_2d[k] = 0; ndrawn++; }
+        if (k == ndrawn && ndrawn < MAX_RT) { drawn[k] = d->fbp; drawn_sides[k] = drawn_2d[k] = drawn_other[k] = 0; ndrawn++; }
         if (k < ndrawn) {
             drawn_sides[k] |= d->sides || (r.wide_2d && d->covers);
+            /* more than clears and fades across the whole picture (untextured, from edge to edge) */
+            drawn_other[k] |= d->textured || !(d->fullw || (!d->flat2d && drawn_rect_full(d, r.vs)));
             drawn_2d[k] |= d->flat2d && (d->textured || !d->fullw);   /* not a fade across the screen */
         }
         SDL_GPUTexture *depth = target(depths, &ndepths, d->zbp, 1);
@@ -977,7 +989,12 @@ void gpu_render(GpuFrame *f, const GpuVertex *verts) {
     pass_end(&r);
     for (int k = 0; k < ndrawn; k++)
         for (int j = 0; j < ncolors; j++)
-            if (colors[j].key == drawn[k]) { colors[j].sides = drawn_sides[k]; colors[j].shows = drawn_2d[k]; }
+            if (colors[j].key == drawn[k]) {
+                /* a picture of only clears and fades (the screen held white or black between scenes) keeps whether
+                   it covers the 16:9 screen, but shows no sides.png */
+                if (drawn_other[k] || drawn_sides[k]) colors[j].sides = drawn_sides[k];
+                colors[j].shows = drawn_2d[k];
+            }
     inflight[inflight_at] = SDL_SubmitGPUCommandBufferAndAcquireFence(r.cmd);
     inflight_at ^= 1;
 }
@@ -1117,6 +1134,17 @@ static void present_into(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *swap, u32 sw
         fill = 1;
         for (int j = 0; j < ncolors; j++)
             if (colors[j].tex == src) { if (colors[j].sides) fill = 0; shows |= colors[j].shows; }
+        /* sides.png on after 3 of the game's pictures that are 4:3 with 2D (a menu, the title), off after 10 without:
+           a passing picture (a skip's last one, logos fading in and out) never makes it flicker */
+        static int run, img;
+        static u32 seen;
+        int want = fill && shows;
+        if (frames_rendered != seen) {        /* once per picture the game drew, however often the window redraws */
+            seen = frames_rendered;
+            if (want != img) { if (++run >= (want ? 3 : 10)) { img = want; run = 0; } }   /* on soon, off late */
+            else run = 0;
+        }
+        shows = img;
         float cw = (rect[2] - rect[0]) * 0.125f, ch = (rect[3] - rect[1]) * 0.125f;
         mid[0] = rect[0] + cw; mid[1] = rect[1]; mid[2] = rect[2] - cw; mid[3] = rect[3];
         if (fill && blur_on) {

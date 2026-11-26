@@ -9,6 +9,12 @@ classify, `colour_clear`). `sides.png` is shown only when the 4:3 picture holds 
 the screen (a menu, a title), so the black pause between scenes stays black (gpu_vk.c, Target.shows). F9 recordings
 no longer overwrite an earlier one with the same name.
 
+Follow-up: a picture of only clears and fades (the game fading over the white without clearing it again, ~1/6 s)
+keeps the previous picture's verdict instead of falling back to a 4:3 box. Whether `sides.png` shows is decided once
+per picture the game draws (not per frame buffer, not per window redraw: with vsync off those run far faster): on
+after 3 pictures that are 4:3 with 2D, off after 10 without, so a skip's last picture or logos fading in and out
+never make it flicker, and a menu gets it as it slides in.
+
 ## 16:9: the UI drawn through VU1 keeps its shape; markers follow the 3D; sides black or a picture (2026-11-26)
 
 MS Saga draws most of its UI through VU1 like its 3D: dialogue boxes and their text, the field radar, the menus
