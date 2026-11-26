@@ -1315,7 +1315,13 @@ static void classify(GpuDraw *d, int type, u32 first) {
            the widened 3D puts its centre (gpu_vk.c) */
         d->marker = ui && d->ztst == 2 && z > 0.0f && z < 0.999f;
     }
-    d->sides = !d->flat2d && (d->tex >= 0 || gs_cur_path == 1) && full_scissor && (x0 < fw / 8.0f || x1 > fw * 7 / 8.0f);
+    /* MS Saga: a clear (or a fade) of a colour other than black (the white the game fades in from after a skipped
+       cutscene) covers the 16:9 screen: it counts as drawn at the sides, which then are not filled as for a 4:3-only
+       picture (menus clear to black: their sides stay black, or show sides.png) */
+    const GpuVertex *cv = &rec->verts[first];
+    int colour_clear = !d->flat2d && !d->textured && d->count && cv->r + cv->g + cv->b > 0.0f;
+    d->sides = !d->flat2d && (d->tex >= 0 || gs_cur_path == 1 || colour_clear) && full_scissor &&
+               (x0 < fw / 8.0f || x1 > fw * 7 / 8.0f);
     int fight_on(void);                         /* port/hle/training.c */
     d->fight = d->flat2d && fight_on();
     d->fullw = 0;

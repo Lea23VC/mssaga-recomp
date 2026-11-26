@@ -90,8 +90,15 @@ void gsrec_flip(void) {
     if (requested && state != 2) {
         requested = 0;
         char name[64];
-        snprintf(name, sizeof name, "gsrec_%u.gsrec", kernel_vblank_count());
-        display_config_path(path, sizeof path, name);
+        u32 vb = kernel_vblank_count();
+        for (int k = 1; k < 100; k++) {                 /* never over an earlier recording */
+            if (k == 1) snprintf(name, sizeof name, "gsrec_%u.gsrec", vb);
+            else snprintf(name, sizeof name, "gsrec_%u_%d.gsrec", vb, k);
+            display_config_path(path, sizeof path, name);
+            FILE *t = fopen(path, "rb");
+            if (!t) break;
+            fclose(t);
+        }
         from = 0;
         recorded = 0;
         state = 1;

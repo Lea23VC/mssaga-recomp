@@ -1,5 +1,14 @@
 # Status
 
+## 16:9: fades between scenes fill the screen (2026-11-26)
+
+After a skipped cutscene the game clears the screen to white (in 32-pixel strips) and fades the next scene in from
+it; the frame had no 3D, so the renderer took it for a 4:3-only picture and showed the white in the middle with black
+or `sides.png` around it. A clear or fade of a colour other than black now counts as drawn at the sides (gs.c
+classify, `colour_clear`). `sides.png` is shown only when the 4:3 picture holds 2D other than a clear or a fade across
+the screen (a menu, a title), so the black pause between scenes stays black (gpu_vk.c, Target.shows). F9 recordings
+no longer overwrite an earlier one with the same name.
+
 ## 16:9: the UI drawn through VU1 keeps its shape; markers follow the 3D; sides black or a picture (2026-11-26)
 
 MS Saga draws most of its UI through VU1 like its 3D: dialogue boxes and their text, the field radar, the menus

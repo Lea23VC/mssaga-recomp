@@ -46,7 +46,7 @@ static SDL_GPUTransferBuffer *vxfer;
 static u32 vxfer_size;
 static SDL_GPUGraphicsPipeline *present_pipe, *overlay_pipe;
 
-typedef struct { u32 key; SDL_GPUTexture *tex; int sides; } Target;   /* sides: last frame drew a picture at the 16:9 sides */
+typedef struct { u32 key; SDL_GPUTexture *tex; int sides, shows; } Target;   /* sides: last frame drew a picture at the 16:9 sides; shows: any 2D (not only a clear) */
 static Target colors[MAX_RT], depths[MAX_RT];
 static int ncolors, ndepths;
 
@@ -219,7 +219,7 @@ static SDL_GPUTexture *target(Target *list, int *n, u32 key, int depth) {
         ? texture(RT_SIZE * scale, RT_SIZE * scale, depth_fmt, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)
         : texture(RT_SIZE * scale, RT_SIZE * scale, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
                   SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET);
-    list[*n] = (Target){key, t, 1};
+    list[*n] = (Target){key, t, 1, 0};
     (*n)++;
     rt_log("gpu", "new %s target %X (%d of them)", depth ? "depth" : "colour", key, *n);
     /* new targets start cleared: colour black, depth 0 (the GS's "farthest" with GEQUAL) */
@@ -945,14 +945,17 @@ void gpu_render(GpuFrame *f, const GpuVertex *verts) {
     r.wide_2d = frame_wide_2d(f);
     r.fbp = r.zbp = ~0u;
     u32 drawn[MAX_RT];                  /* frame buffers drawn in this frame, and whether at the sides */
-    int drawn_sides[MAX_RT], ndrawn = 0;
+    int drawn_sides[MAX_RT], drawn_2d[MAX_RT], ndrawn = 0;
     for (u32 i = 0; i < f->ndraws; i++) {
         GpuDraw *d = &f->draws[i];
         SDL_GPUTexture *color = target(colors, &ncolors, d->fbp, 0);
         int k = 0;
         while (k < ndrawn && drawn[k] != d->fbp) k++;
-        if (k == ndrawn && ndrawn < MAX_RT) { drawn[k] = d->fbp; drawn_sides[k] = 0; ndrawn++; }
-        if (k < ndrawn) drawn_sides[k] |= d->sides || (r.wide_2d && d->covers);
+        if (k == ndrawn && ndrawn < MAX_RT) { drawn[k] = d->fbp; drawn_sides[k] = drawn_2d[k] = 0; ndrawn++; }
+        if (k < ndrawn) {
+            drawn_sides[k] |= d->sides || (r.wide_2d && d->covers);
+            drawn_2d[k] |= d->flat2d && (d->textured || !d->fullw);   /* not a fade across the screen */
+        }
         SDL_GPUTexture *depth = target(depths, &ndepths, d->zbp, 1);
         float across;
         SDL_GPUTexture *tex = draw_texture(&r, d, color, &across);
@@ -974,7 +977,7 @@ void gpu_render(GpuFrame *f, const GpuVertex *verts) {
     pass_end(&r);
     for (int k = 0; k < ndrawn; k++)
         for (int j = 0; j < ncolors; j++)
-            if (colors[j].key == drawn[k]) colors[j].sides = drawn_sides[k];
+            if (colors[j].key == drawn[k]) { colors[j].sides = drawn_sides[k]; colors[j].shows = drawn_2d[k]; }
     inflight[inflight_at] = SDL_SubmitGPUCommandBufferAndAcquireFence(r.cmd);
     inflight_at ^= 1;
 }
@@ -1108,11 +1111,12 @@ static void present_into(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *swap, u32 sw
     static int blur_on = -1;
     if (blur_on < 0) blur_on = getenv("MSSAGA_WIDE_BLUR") && atoi(getenv("MSSAGA_WIDE_BLUR"));
     int fill = 0;
+    int shows = 0;                       /* a menu, a title: sides.png; only a clear (a black pause between scenes): black */
     float mid[4];                        /* the middle 3/4 of the picture's width */
     if (src && widescreen_on() && !is_movie) {
         fill = 1;
         for (int j = 0; j < ncolors; j++)
-            if (colors[j].tex == src && colors[j].sides) fill = 0;
+            if (colors[j].tex == src) { if (colors[j].sides) fill = 0; shows |= colors[j].shows; }
         float cw = (rect[2] - rect[0]) * 0.125f, ch = (rect[3] - rect[1]) * 0.125f;
         mid[0] = rect[0] + cw; mid[1] = rect[1]; mid[2] = rect[2] - cw; mid[3] = rect[3];
         if (fill && blur_on) {
@@ -1152,7 +1156,7 @@ static void present_into(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *swap, u32 sw
         SDL_BindGPUGraphicsPipeline(rp, present_pipe);
         if (fill) {                      /* the sides (black, a picture, or blurred), then only the middle of the picture */
             if (sides_state < 0) sides_load();
-            if (sides_state > 0 && !blur_on) {   /* the picture over the whole 16:9, its top kept */
+            if (sides_state > 0 && !blur_on && shows) {   /* the picture over the whole 16:9, its top kept */
                 float iw = (float)sides_w, ih = (float)sides_h, va = vw / vh;
                 float r[4] = {0, 0, 1, 1};
                 if (iw / ih < va) r[3] = (iw / va) / ih;           /* taller than 16:9: its top part */
