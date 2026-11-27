@@ -1,5 +1,28 @@
 # Status
 
+## Noisy sky in the village cutscene fixed; turbo; subtitles and portraits in 16:9 (2026-11-27)
+
+**Sky / trees noise** (the Zakus attacking the village, not every run; the software GS too): the cutscene streams a
+256x256 texture (the sky) through RenderWare's texture pool each picture. From a 12-second F9 clip: up to a point
+the uploads trickle in between the draws (one GIF packet per MSKPATH3 0); then the next picture's chain is started
+only after this picture's VIF1 has passed its unmasks, and the end-of-picture flush sent it whole: ~100 uploads in
+one burst, a pool slot written twice before its first texture was drawn (the sky's slot under a small texture). Now
+at the end of a picture (`dmac_path3_seal`) a chain already opened by this picture's VIF1 sends the rest, and one not
+opened yet stays held for the next picture's VIF1 to open packet by packet, as on the PS2. Played: clean three times
+(2x and normal speed), no freeze. F10 still switches path 3 to whole chains live, to compare.
+
+**Turbo** (`runtime/turbo.c`): Tab runs gameplay faster (x2, `MSSAGA_TURBO=3/4`), kept in the settings folder. The
+game counts in vertical blanks, so the kernel's timer fires n times as often; music and voices (ADX) and the sound
+driver keep their real-time clocks. Only on a map or in a battle (`game_on_map` / `game_in_battle`), not during a
+movie, and only while exactly one ADX voice plays (none: changing tracks, entering a battle, where at x2 the battle
+theme's wait ran out and it never started; two or more: a voice line or jingle over the music). Known: a cutscene's
+lines before its first voice still run faster (cutscenes aren't recognised yet: their letterbox isn't drawn as bars).
+
+**16:9 fixes**: a subtitle without a box (cutscenes) had its words spread to both edges by the HUD layout: units of a
+line's height side by side within 24 pixels are now one element. A centre portrait overlapping a moved side
+portrait lost pieces of its 3D (Marie's hair and glasses) to it: 3D drawn into a box now belongs only to its own box.
+`MSSAGA_P3_TINY=0` turns the tiny-first-packet rule off (to compare).
+
 ## 16:9: the HUD at the screen's edges, as the remasters do (2026-11-26)
 
 Over 3D reaching the sides, the 2D kept 4:3 goes to the 16:9 screen's edges by element (`gpu_vk.c` hud_shifts). The

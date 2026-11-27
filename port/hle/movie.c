@@ -272,6 +272,7 @@ static void movie_stop(void) {
 }
 
 static int movie_playing(void) { return running && !done; }
+int movie_active(void) { return movie_playing(); }
 
 /* For the display: the newest picture into out (if there is a video and *gen is not its picture's
  * number); 0 when no video is playing. */
@@ -303,6 +304,7 @@ void movie_audio(float *out, int frames) {
 static int movie_start(u32 entry) { rt_log("movie", "AFS entry %u skipped: built without FFmpeg", entry); return 0; }
 static void movie_stop(void) {}
 static int movie_playing(void) { return 0; }
+int movie_active(void) { return movie_playing(); }
 int movie_take(u32 *out, int max, int *w, int *h, u32 *gen) { (void)out; (void)max; (void)w; (void)h; (void)gen; return 0; }
 void movie_audio(float *out, int frames) { (void)out; (void)frames; }
 #endif

@@ -590,6 +590,23 @@ static void hud_shifts(GpuFrame *f, GpuVertex *m, int wide_3d) {
             if (ra != rb) parent[rb] = ra;
         }
     }
+    /* a line of text without a box behind it (a cutscene's subtitle): its words don't touch; units of a line's height
+       side by side on the same line, up to 24 pixels apart, are one element */
+    for (u32 ia = 0; ia < n; ia++) {
+        u32 a = order[ia];
+        float ha = bb[a][3] - bb[a][2];
+        if (stays[a] || slot[a] || ha > 28.0f) continue;
+        for (u32 ib = ia + 1; ib < n; ib++) {
+            u32 b = order[ib];
+            if (bb[b][0] > bb[a][1] + 24.0f) break;
+            float hb = bb[b][3] - bb[b][2], ov = fminf(bb[a][3], bb[b][3]) - fmaxf(bb[a][2], bb[b][2]);
+            if (stays[b] || slot[b] || hb > 28.0f || ov < 0.5f * fminf(ha, hb)) continue;
+            int ra = (int)a, rb = (int)b;
+            while (parent[ra] != ra) ra = parent[ra];
+            while (parent[rb] != rb) rb = parent[rb];
+            if (ra != rb) parent[rb] = ra;
+        }
+    }
     for (u32 a = 0; a < n; a++) { eb[a][0] = 1e9f; eb[a][1] = -1e9f; }
     for (u32 a = 0; a < n; a++) {
         int r = (int)a;
@@ -654,7 +671,8 @@ static void portrait_shifts(GpuFrame *f, GpuVertex *m, int wide_3d) {
         if (!kept_43(d, wide_3d) || anchored(d, wide_3d)) continue;
         for (u32 k = 0; k < nbox; k++) {
             int in = d->box && !memcmp(box[k], d->scissor, sizeof box[k]);
-            if (!in) {                              /* 2D on the box: within it, give or take its frame */
+            if (!in && !d->box) {                   /* 2D on the box: within it, give or take its frame (3D drawn into
+                                                       another box, a centre portrait overlapping it, is not on it) */
                 float x0, x1, y0, y1;
                 draw_bounds(d, m, &x0, &x1, &y0, &y1);
                 float e = 10.0f;
@@ -1064,6 +1082,7 @@ static void frame_logs(const GpuFrame *f) {
 
 /* A recorded frame drawn on the GPU (verts: NULL, or the vertices moved for an interpolated frame). */
 static u32 frames_rendered;             /* pictures the game drew: the clock of the sides.png switch */
+
 
 void gpu_render(GpuFrame *f, const GpuVertex *verts) {
     frames_rendered++;

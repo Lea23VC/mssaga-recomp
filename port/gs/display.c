@@ -598,6 +598,14 @@ static int display_window_gpu(void) {
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F2 && !e.key.repeat) widescreen_toggle();
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F3) panel_on = !panel_on;
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F4) gpu_set_vsync(!gpu_vsync());
+            if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F10 && !e.key.repeat) {
+                void dmac_path3_mode_toggle(void);          /* dmac.c: texture streaming, to compare */
+                dmac_path3_mode_toggle();
+            }
+            if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_TAB && !e.key.repeat) {
+                void turbo_toggle(void);                    /* runtime/turbo.c: gameplay sped up */
+                turbo_toggle();
+            }
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F9 && !e.key.repeat) {
                 void gsrec_request(void);                   /* gsrec.c: a recording for bug reports */
                 gsrec_request();

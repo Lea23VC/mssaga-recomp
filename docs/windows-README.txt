@@ -22,6 +22,7 @@ A gamepad (Xbox, PlayStation, ...) works as a DualShock 2. Keyboard:
   F2   widescreen 16:9 on / off (remembered)
   F3   performance panel
   F4   vsync on / off
+  Tab  turbo: gameplay at double speed on maps and in battles (remembered)
   F9   records the next few seconds of graphics for a bug report
        (gsrec_*.gsrec in the folder below; large, delete them when done)
 

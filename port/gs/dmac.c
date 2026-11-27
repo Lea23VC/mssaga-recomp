@@ -177,6 +177,7 @@ static void finish(int ch) {
 }
 
 void dmac_path3_flush(void);
+void dmac_path3_seal(void);
 void dmac_path3_open_step(int all);
 
 static void transfer(Ctx *c, int ch) {
@@ -205,7 +206,7 @@ static void *gs_thread(void *arg) {
         int ch = queue[qhead];
         pthread_mutex_unlock(&qlock);
         if (ch == JOB_FLIP) {
-            dmac_path3_flush();
+            dmac_path3_seal();
             gsrec_flip();
             gpu_seal_frame();
             pthread_mutex_lock(&qlock);
@@ -278,7 +279,7 @@ void dmac_gs_flip(void) {
     if (!gpu_on) return;
     gs_thread_start();
     if (async) queue_job(JOB_FLIP);
-    else { dmac_path3_flush(); gsrec_flip(); gpu_seal_frame(); }
+    else { dmac_path3_seal(); gsrec_flip(); gpu_seal_frame(); }
 }
 
 static volatile int gif_held;               /* MS Saga: a GIF transfer waiting for path 3 to be unmasked */
@@ -293,7 +294,7 @@ int dmac_gif_held(void) { return __atomic_load_n(&gif_held, __ATOMIC_ACQUIRE); }
  * held chain is walked as a cursor: one packet at an unmask, one more at each VU1 program started while path 3 is
  * open (time passes on the PS2), the rest at FLUSHA or at the end of the VIF1 transfer while open, and before a
  * new path 3 transfer or the end of the frame in any case (dmac_path3_flush). MSSAGA_PATH3_WHOLE=1: as before. */
-static struct { int active; u32 tadr, asr[2]; int asp, done; const u8 *p; u32 left; int first; u32 pkt_qw; } p3;
+static struct { int active; u32 tadr, asr[2]; int asp, done; const u8 *p; u32 left; int first; u32 pkt_qw; int opened; } p3;
 
 void gsrec_data(int ch, int tag, const u8 *p, u32 bytes);
 u32 gif_dma_packet(const u8 *data, u32 qwc, int *ended);    /* gs.c */
@@ -349,7 +350,9 @@ static void p3_run(int packets) {
             /* the chain's first packet, a lone tag and its register (2 quadwords): on the PS2 the GIF is through it at
                once and the texture packet behind it starts before the mask closes again; counted, it put every
                upload of the chain one unmask late (a battle effect's first picture drawn with the textures not there) */
-            int tiny_first = p3.first && p3.pkt_qw <= 2;
+            static int tiny_rule = -1;          /* MSSAGA_P3_TINY=0: counted like any packet (to compare) */
+            if (tiny_rule < 0) tiny_rule = !(getenv("MSSAGA_P3_TINY") && !atoi(getenv("MSSAGA_P3_TINY")));
+            int tiny_first = tiny_rule && p3.first && p3.pkt_qw <= 2;
             p3.first = 0;
             p3.pkt_qw = 0;
             if (packets > 0 && !tiny_first) packets--;
@@ -357,15 +360,23 @@ static void p3_run(int packets) {
     }
 }
 
+static volatile int p3_whole_on = -1;
 static int p3_whole(void) {
-    static int w = -1;
-    if (w < 0) w = getenv("MSSAGA_PATH3_WHOLE") && atoi(getenv("MSSAGA_PATH3_WHOLE"));
-    return w;
+    if (p3_whole_on < 0) p3_whole_on = getenv("MSSAGA_PATH3_WHOLE") && atoi(getenv("MSSAGA_PATH3_WHOLE"));
+    return p3_whole_on;
+}
+
+/* F10 (display.c): switch between the packet-by-packet path 3 and the whole chain at the first unmask, live, to
+   compare a scene both ways */
+void dmac_path3_mode_toggle(void) {
+    p3_whole_on = !p3_whole();
+    rt_log("dma", "path 3: %s", p3_whole_on ? "whole chains at the first unmask (F10)" : "one packet per unmask (F10)");
 }
 
 /* VIF1 unmasked path 3 (MSKPATH3 0): the held GIF chain's next packet goes through */
 void dmac_path3_unmasked(void) {
     if (!p3.active) return;
+    p3.opened = 1;
     if (want_dma_log()) rt_log("dma", "ch2: path 3 unmasked");
     p3_run(p3_whole() ? -1 : 1);
 }
@@ -377,6 +388,12 @@ void dmac_path3_open_step(int all) {
 
 /* the end of a VIF1 transfer: path 3 open, the rest goes; new path 3 work or the frame's end: the rest in any case */
 void dmac_path3_flush(void) { p3_run(-1); }
+
+/* MS Saga: the end of a picture. A chain already opened by this picture's VIF1 sends the rest; one started after the
+   last unmask (the next picture's textures, given while this picture's draws were done) stays held for the next
+   picture's VIF1 to open packet by packet. Sent whole here, a pool slot was written twice before its first texture
+   was drawn (the village cutscene's streamed sky under small textures: noise, in bursts after the last draw). */
+void dmac_path3_seal(void) { if (p3.active && p3.opened) p3_run(-1); }
 
 static void start(Ctx *c, int ch) {
     u32 *r = reg[ch];
@@ -406,7 +423,7 @@ static void start(Ctx *c, int ch) {
         __atomic_store_n(&gif_held, 1, __ATOMIC_RELEASE);
         if (want_dma_log()) rt_log("dma", "ch2 held: path 3 masked");
         if ((r[0] >> 2 & 3) == 1) {                 /* a chain: walked packet by packet as path 3 opens */
-            p3 = (typeof(p3)){1, r[0x30 / 4], {r[0x40 / 4], r[0x50 / 4]}, (int)((r[0] >> 4) & 3), 0, NULL, 0, 1, 0};
+            p3 = (typeof(p3)){1, r[0x30 / 4], {r[0x40 / 4], r[0x50 / 4]}, (int)((r[0] >> 4) & 3), 0, NULL, 0, 1, 0, 0};
         } else { transfer(c, ch); finish(ch); __atomic_store_n(&gif_held, 0, __ATOMIC_RELEASE); }
         return;
     }

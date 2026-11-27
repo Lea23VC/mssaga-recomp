@@ -299,7 +299,8 @@ static void *timer_main(void *arg) {
     struct timespec next;
     clock_gettime(CLOCK_MONOTONIC, &next);
     for (;;) {
-        next.tv_nsec += ntsc ? 16683333 : 20000000;   /* 59.94 or 50 Hz */
+        int turbo_speed(void);                          /* runtime/turbo.c: gameplay sped up */
+        next.tv_nsec += (ntsc ? 16683333 : 20000000) / turbo_speed();   /* 59.94 or 50 Hz, or n times that */
         if (next.tv_nsec >= 1000000000) { next.tv_nsec -= 1000000000; next.tv_sec++; }
         platform_sleep_until(&next);
         timer_vblank = 1;

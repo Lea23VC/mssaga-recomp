@@ -50,6 +50,7 @@ static volatile int state = AT_TITLE;
 
 /* whether the battle DLL is the one loaded (gpu_vk.c: the battle HUD stays in the middle 4:3 for now) */
 int game_in_battle(void) { return state == IN_BATTLE; }
+int game_on_map(void) { return state == EXPLORING; }
 
 void discord_note_dll(const char *name) {
     if (!strcmp(name, "title")) state = AT_TITLE;

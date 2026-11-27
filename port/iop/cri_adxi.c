@@ -391,6 +391,13 @@ static void rna_message(Ctx *c, const Dtx *d) {
     wr32(c, d->ee_buf, 0);
 }
 
+/* MS Saga: how many voices are playing (runtime/turbo.c: the music alone lets gameplay run faster) */
+int cri_voices_playing(void) {
+    int n = 0;
+    for (int i = 0; i < MAX_VOICES; i++) n += voices[i].used && voices[i].playing;
+    return n;
+}
+
 /* An EE -> IOP transfer arrived (sceSifSetDma): a DTX buffer gets its reply. */
 void cri_adxi_dma(Ctx *c, u32 iop_dst, u32 size) {
     (void)size;
