@@ -45,7 +45,9 @@ static SDL_GPUBuffer *vbuf;
 static u32 vbuf_size;
 static SDL_GPUTransferBuffer *vxfer;
 static u32 vxfer_size;
-static SDL_GPUGraphicsPipeline *present_pipe, *overlay_pipe;
+static SDL_GPUGraphicsPipeline *present_pipe, *overlay_pipe, *fxaa_pipe;   /* fxaa: the FXAA pass (fxaa.frag) */
+static SDL_GPUTexture *aa_tex;                    /* the presented picture before FXAA, window-sized */
+static u32 aa_w, aa_h;
 
 typedef struct { u32 key; SDL_GPUTexture *tex; int sides, shows; } Target;   /* sides: last frame drew a picture at the 16:9 sides; shows: and 2D (not only a clear) */
 static Target colors[MAX_RT], depths[MAX_RT];
@@ -226,6 +228,12 @@ int gpu_init(void *sdl_window) {
     scratch = texture(RT_SIZE * scale, RT_SIZE * scale, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
                       SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET);
     present_pipe = simple_pipe(swap_fmt, 0);
+    {   /* the same full-screen triangle, the FXAA fragment shader */
+        SDL_GPUShader *afs = shader(SHADER(fxaa_frag), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1), *keep = pfs;
+        pfs = afs;
+        fxaa_pipe = simple_pipe(swap_fmt, 0);
+        pfs = keep;
+    }
     overlay_pipe = simple_pipe(swap_fmt, 1);
     /* frame rate unlocked unless MSSAGA_VSYNC=1 (F4 switches) */
     if (win) gpu_set_vsync(getenv("MSSAGA_VSYNC") && atoi(getenv("MSSAGA_VSYNC")));
@@ -443,22 +451,24 @@ static int frame_wide_3d(const GpuFrame *f) {
 
 /* MS Saga: widescreen layout options, switched in the settings menu (menu.cpp) and kept in the settings folder; the
    environment variable, when set, wins */
-enum { OPT_HUD_EDGES, OPT_PORTRAITS, OPT_SIDES, OPT_N };
-static const char *opt_env[OPT_N] = {"MSSAGA_HUD_EDGES", "MSSAGA_WIDE_PORTRAITS", "MSSAGA_SIDES"};
-static const char *opt_file[OPT_N] = {"hud_edges", "portraits", "sides_picture"};
-static int opt_val[OPT_N] = {-1, -1, -1};
+enum { OPT_HUD_EDGES, OPT_PORTRAITS, OPT_SIDES, OPT_FXAA, OPT_N };
+static const char *opt_env[OPT_N] = {"MSSAGA_HUD_EDGES", "MSSAGA_WIDE_PORTRAITS", "MSSAGA_SIDES", "MSSAGA_FXAA"};
+static const char *opt_file[OPT_N] = {"hud_edges", "portraits", "sides_picture", "fxaa"};
+static const char *opt_default[OPT_N] = {"1", "1", "1", "0"};
+static int opt_val[OPT_N] = {-1, -1, -1, -1};
 void display_config_path(char *p, size_t n, const char *name);     /* display.c */
 
 int gpu_option(int which) {
     if (which < 0 || which >= OPT_N) return 0;
     if (opt_val[which] < 0) {
         const char *e = getenv(opt_env[which]);
-        char path[1100], buf[8] = "1";
+        char path[1100], buf[8];
+        snprintf(buf, sizeof buf, "%s", opt_default[which]);
         if (e) snprintf(buf, sizeof buf, "%s", e);
         else {
             display_config_path(path, sizeof path, opt_file[which]);
             FILE *f = fopen(path, "r");
-            if (f) { if (!fgets(buf, sizeof buf, f)) buf[0] = '1'; fclose(f); }
+            if (f) { if (!fgets(buf, sizeof buf, f)) snprintf(buf, sizeof buf, "%s", opt_default[which]); fclose(f); }
         }
         opt_val[which] = atoi(buf) != 0;
     }
@@ -1489,7 +1499,30 @@ void gpu_present(void) {
         int ph = widescreen_on() ? (int)sw * 9 / 16 : (int)sw * 3 / 4;     /* the picture's height */
         want_scale = scale_for((int)sh < ph ? (int)sh : ph);
     }
-    present_into(cmd, swap, sw, sh);
+    if (gpu_option(OPT_FXAA) && fxaa_pipe) {           /* FXAA: the picture into a texture, then smoothed into the window */
+        if (!aa_tex || aa_w != sw || aa_h != sh) {
+            if (aa_tex) SDL_ReleaseGPUTexture(dev, aa_tex);
+            aa_tex = texture(sw, sh, swap_fmt, SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET);
+            aa_w = sw;
+            aa_h = sh;
+        }
+        present_into(cmd, aa_tex, sw, sh);
+        SDL_GPUColorTargetInfo ci = {0};
+        ci.texture = swap;
+        ci.load_op = SDL_GPU_LOADOP_DONT_CARE;
+        ci.store_op = SDL_GPU_STOREOP_STORE;
+        SDL_GPURenderPass *rp = SDL_BeginGPURenderPass(cmd, &ci, 1, NULL);
+        SDL_GPUViewport vp = {0, 0, (float)sw, (float)sh, 0, 1};
+        SDL_SetGPUViewport(rp, &vp);
+        SDL_BindGPUGraphicsPipeline(rp, fxaa_pipe);
+        float full[4] = {0, 0, 1, 1}, px[4] = {1.0f / (float)sw, 1.0f / (float)sh, 0, 0};
+        SDL_PushGPUVertexUniformData(cmd, 0, full, sizeof full);
+        SDL_PushGPUFragmentUniformData(cmd, 0, px, sizeof px);
+        SDL_GPUTextureSamplerBinding tsb = {aa_tex, samplers[1 | 6]};
+        SDL_BindGPUFragmentSamplers(rp, 0, &tsb, 1);
+        SDL_DrawGPUPrimitives(rp, 3, 1, 0, 0);
+        SDL_EndGPURenderPass(rp);
+    } else present_into(cmd, swap, sw, sh);
     void menu_draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target);    /* menu.cpp: the settings menu */
     menu_draw(cmd, swap);
     SDL_SubmitGPUCommandBuffer(cmd);

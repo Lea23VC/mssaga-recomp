@@ -41,7 +41,7 @@ int cheats_on(int i);
 void cheats_set(int i, int on);
 }
 
-enum { OPT_HUD_EDGES, OPT_PORTRAITS, OPT_SIDES };   /* gpu_vk.c gpu_option */
+enum { OPT_HUD_EDGES, OPT_PORTRAITS, OPT_SIDES, OPT_FXAA };   /* gpu_vk.c gpu_option */
 
 static SDL_Window *mwin;
 static int ready, open_, confirm_exit;
@@ -126,6 +126,7 @@ static void flip_vsync(void) { gpu_set_vsync(!gpu_vsync()); }
 static void flip_hud(void) { gpu_set_option(OPT_HUD_EDGES, !gpu_option(OPT_HUD_EDGES)); }
 static void flip_portraits(void) { gpu_set_option(OPT_PORTRAITS, !gpu_option(OPT_PORTRAITS)); }
 static void flip_sides(void) { gpu_set_option(OPT_SIDES, !gpu_option(OPT_SIDES)); }
+static void flip_fxaa(void) { gpu_set_option(OPT_FXAA, !gpu_option(OPT_FXAA)); }
 static void flip_panel(void) { display_panel_set(!display_panel_on()); }
 static void flip_discord(void) { discord_set(!discord_setting()); }
 static int scale_pick;
@@ -183,6 +184,9 @@ static void build(void) {
                                       "Higher than your screen also smooths jagged edges (anti-aliasing),\n"
                                       "but needs more from your graphics card.");
             }
+            toggle_row("FXAA (smooth edges)", gpu_option(OPT_FXAA), flip_fxaa,
+                       "Smooths jagged edges at any resolution, cheaply. It also softens text and the HUD a little;\n"
+                       "a higher Resolution smooths edges without that, but needs more from the graphics card.");
             ImGui::Separator();
             ImGui::TextDisabled("Widescreen layout");
             toggle_row("HUD at the screen's edges", gpu_option(OPT_HUD_EDGES), flip_hud,

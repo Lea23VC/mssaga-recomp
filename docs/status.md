@@ -8,6 +8,11 @@ nothing blurred. Kept in the settings folder (`scale`, 0 = auto; `MSSAGA_SCALE` 
 picture through the existing rescale. Each render target is a 1024 x scale square (8x: 256 MB each), so 6x and up
 say they need a strong graphics card. Played: works.
 
+FXAA (F1 > Video, off by default, file `fxaa`, `MSSAGA_FXAA`): `shaders/fxaa.frag`, one pass over the final picture
+at window size (`gpu_present`: presented into `aa_tex`, then smoothed into the window). Kept, but **not announced as
+a feature** (README, release notes): with Auto (4x on a 1080p window) the downscale already smooths the edges, so it
+shows little difference. It may matter only at a low Resolution on a weak graphics card.
+
 ## Cheats (F1 > Cheats) (2026-11-27)
 
 `port/runtime/cheats.c` applies cheat codes at each vertical blank (kernel.c, after the pads), as a PS2 cheat device
