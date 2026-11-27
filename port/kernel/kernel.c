@@ -259,6 +259,10 @@ static void run_interrupts(void) {
     timer_vblank = 0;
     vblanks++;
     pad_vblank(&irq_ctx);
+    {
+        void cheats_apply(void);                        /* runtime/cheats.c: the codes that are on */
+        cheats_apply();
+    }
     hsyncs += ntsc ? 262 : 312;
     if (intc_mask & (1 << 2)) run_handlers(intc, 2);       /* VBLANK_START */
     if (intc_mask & (1 << 3)) run_handlers(intc, 3);       /* VBLANK_END */

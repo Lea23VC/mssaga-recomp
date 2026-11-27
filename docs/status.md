@@ -1,5 +1,22 @@
 # Status
 
+## Cheats (F1 > Cheats) (2026-11-27)
+
+`port/runtime/cheats.c` applies cheat codes at each vertical blank (kernel.c, after the pads), as a PS2 cheat device
+would. The list: the MS Saga section of the CheatDevicePS2 database (GPL-3.0; `tools/cheats2c.py` writes
+`port/runtime/cheats_db.c`), 236 cheats, plus the player's own `cheats.txt` in the settings folder. Its enable code
+(`90133094 0C09B3B7`) matches SLUS_212.70 (the word at 0x133094), so they are for this release. None patch the
+game's code (they would do nothing: it is compiled); all write its data (mostly the save state at 0x1Fxxxxx). Types
+done: 0/1/2 (8/16/32-bit writes), 4 (serial writes), D (16-bit test of the pad buffer: the "press L1+Select" codes);
+9 (a device's hook) skipped. Which are on: `cheats_on` in the settings folder. The menu's Cheats tab: groups that fold,
+a search box.
+
+**Max EXP**: the database writes 99,999,999; the game's EXP table (0x3B7438, 49 steps to 5,000,000 at level 50, the one
+"Gain 1 Exp For Level 50" rewrites) says level 50 is the cap. With more, the party screen lost the character's
+portrait for good; now it writes 5,000,000. The levels come at the end of the next battle (until then "Next" is
+negative and the party screen draws the row broken; the game's own behaviour); the menu says so. Played: Level 99,
+stats, TP, Max EXP (fixed after a battle), Have Item.
+
 ## Settings menu (F1 / Start+Select) with Dear ImGui (2026-11-27)
 
 `port/gs/menu.cpp` (C++, behind a few C functions) draws a settings window with Dear ImGui v1.91.9b

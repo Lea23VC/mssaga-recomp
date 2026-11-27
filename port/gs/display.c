@@ -612,6 +612,10 @@ static int display_window_gpu(void) {
     if (!win || gpu_init(win)) return -1;
     the_win = win;
     if (menu_init(win, gpu_device(), gpu_swap_format())) rt_log("display", "the settings menu could not start");
+    {
+        int cheats_count(void);                         /* runtime/cheats.c: loaded before the game runs */
+        cheats_count();
+    }
     int interp = getenv("MSSAGA_INTERP") && atoi(getenv("MSSAGA_INTERP"));   /* MS Saga: off unless asked (artifacts) */
     GpuFrame *fa = NULL, *fb = NULL;    /* the frame before, the newest */
     u64 tb = 0, period = 20000000;      /* when the newest came; time between frames (ns) */

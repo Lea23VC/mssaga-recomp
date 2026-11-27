@@ -9,6 +9,7 @@
 #include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
@@ -30,6 +31,11 @@ int display_panel_on(void);
 void display_panel_set(int on);
 void display_config_path(char *p, size_t n, const char *name);
 int menu_open(void);
+int cheats_count(void);                       /* runtime/cheats.c */
+const char *cheats_name(int i);
+const char *cheats_group(int i);
+int cheats_on(int i);
+void cheats_set(int i, int on);
 }
 
 enum { OPT_HUD_EDGES, OPT_PORTRAITS, OPT_SIDES };   /* gpu_vk.c gpu_option */
@@ -170,6 +176,46 @@ static void build(void) {
                 ImGui::SameLine();
                 if (ImGui::RadioButton(b, f == n)) turbo_set_factor(n);         /* no window or swapchain change */
             }
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Cheats")) {
+            ImGui::TextWrapped("Codes from the CheatDevicePS2 database. They change the game as it runs, and what they "
+                               "change is kept when you save.");
+            static ImGuiTextFilter filter;
+            filter.Draw("Search");
+            ImGui::BeginChild("cheats", ImVec2(0, ImGui::GetIO().DisplaySize.y * 0.45f), ImGuiChildFlags_Borders);
+            int n = cheats_count();
+            for (int i = 0; i < n;) {
+                const char *g = cheats_group(i);
+                int j = i, shown = 0, on = 0;
+                while (j < n && !strcmp(cheats_group(j), g)) {
+                    if (filter.PassFilter(cheats_name(j)) || filter.PassFilter(g)) shown++;
+                    on += cheats_on(j);
+                    j++;
+                }
+                if (shown) {
+                    char head[96];
+                    if (on) snprintf(head, sizeof head, "%s  (%d on)###%s", g, on, g);
+                    else snprintf(head, sizeof head, "%s###%s", g, g);
+                    if (filter.IsActive()) ImGui::SetNextItemOpen(true);
+                    if (ImGui::CollapsingHeader(head)) {
+                        for (int k = i; k < j; k++) {
+                            if (!filter.PassFilter(cheats_name(k)) && !filter.PassFilter(g)) continue;
+                            ImGui::PushID(k);
+                            bool v = cheats_on(k) != 0;
+                            if (ImGui::Checkbox(cheats_name(k), &v)) cheats_set(k, v);
+                            if (!strcmp(cheats_name(k), "Max EXP")) {   /* levels come at the end of a battle */
+                                ImGui::SameLine();
+                                ImGui::TextDisabled("(levels up after the next battle; the party screen looks broken until then)");
+                            }
+                            ImGui::PopID();
+                        }
+                    }
+                }
+                i = j;
+            }
+            ImGui::EndChild();
+            ImGui::TextDisabled("Your own codes: cheats.txt in the settings folder (same format).");
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Misc")) {
