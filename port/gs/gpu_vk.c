@@ -34,6 +34,7 @@ int kernel_ntsc(void);
 #define MAX_TEX GPU_MAX_TEX
 
 static int scale = 2;
+void display_config_path(char *p, size_t n, const char *name);     /* display.c */
 static SDL_Window *win;
 static SDL_GPUDevice *dev;
 static SDL_GPUShader *vs, *fs, *pvs, *pfs;
@@ -153,11 +154,26 @@ void gpu_set_vsync(int on) {
 
 int gpu_vsync(void) { return vsync_on; }
 
+/* the settings menu (menu.cpp): the internal resolution, 0 = follow the window (auto), 2..8 = that many times the
+   PS2's; more than the window is supersampling (anti-aliasing), at the cost of video memory (a 1024 x scale square
+   per render target) */
+static int fixed_scale, want_scale;
+int gpu_scale_now(void) { return scale; }
+int gpu_scale_mode(void) { return fixed_scale ? scale : 0; }
+void gpu_set_scale_mode(int m) {
+    if (m < 0 || m == 1 || m > 8) return;
+    char path[1100];
+    display_config_path(path, sizeof path, "scale");
+    FILE *f = fopen(path, "w");
+    if (f) { fprintf(f, "%d\n", m); fclose(f); }
+    fixed_scale = m != 0;
+    if (m) want_scale = m;                              /* applied at the next picture (gpu_render: rescale) */
+    rt_log("gpu", "internal resolution: %s", m ? "fixed" : "auto");
+}
+
 /* Render scale for a picture this many pixels high: its height, and half as much again to average
  * down (supersampling) up to 4 (a 4096 x 4096 target per buffer), never below the picture's own
  * height (5 for a 4K window). It follows the window (F1, resizing) unless MSSAGA_SCALE fixes it. */
-static int fixed_scale, want_scale;
-
 static int scale_for(int h) {
     int s = (h * 3 / 2 + 447) / 448, n = (h + 447) / 448;
     if (s > 4) s = 4;
@@ -170,6 +186,13 @@ static int scale_for(int h) {
 int gpu_init(void *sdl_window) {
     const char *sc = getenv("MSSAGA_SCALE");
     win = sdl_window;
+    char sbuf[8] = "";
+    if (!sc) {                                          /* the menu's choice (settings folder, "scale": 0 auto) */
+        char path[1100];
+        display_config_path(path, sizeof path, "scale");
+        FILE *f = fopen(path, "r");
+        if (f) { if (fgets(sbuf, sizeof sbuf, f)) sc = sbuf; fclose(f); }
+    }
     if (sc && atoi(sc) >= 1 && atoi(sc) <= 8) { scale = atoi(sc); fixed_scale = 1; }
     else if (win) {
         int w = 1440, h = 1080;

@@ -31,6 +31,9 @@ int display_panel_on(void);
 void display_panel_set(int on);
 void display_config_path(char *p, size_t n, const char *name);
 int menu_open(void);
+int gpu_scale_now(void);                      /* gpu_vk.c: internal resolution */
+int gpu_scale_mode(void);
+void gpu_set_scale_mode(int m);
 int cheats_count(void);                       /* runtime/cheats.c */
 const char *cheats_name(int i);
 const char *cheats_group(int i);
@@ -125,6 +128,8 @@ static void flip_portraits(void) { gpu_set_option(OPT_PORTRAITS, !gpu_option(OPT
 static void flip_sides(void) { gpu_set_option(OPT_SIDES, !gpu_option(OPT_SIDES)); }
 static void flip_panel(void) { display_panel_set(!display_panel_on()); }
 static void flip_discord(void) { discord_set(!discord_setting()); }
+static int scale_pick;
+static void apply_scale(void) { gpu_set_scale_mode(scale_pick); }
 
 static void build(void) {
     ImGuiIO &io = ImGui::GetIO();
@@ -155,6 +160,29 @@ static void build(void) {
             else snprintf(label, sizeof label, "Window: %d x %d", w, h);
             if (ImGui::Button(label)) later(display_win_size_next);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("The next size up that fits the screen, then full screen.");
+            {   /* internal resolution: more than the window smooths the edges (supersampling) */
+                static const char *near[9] = {"", "", "about 900p", "about 1440p", "about 1800p", "about 4K", "about 5K",
+                                              "about 6K", "about 7K"};
+                int mode = gpu_scale_mode(), now = gpu_scale_now();
+                if (now < 2) now = 2;
+                if (now > 8) now = 8;
+                char cur[64];
+                if (mode) snprintf(cur, sizeof cur, "%dx (%s)", mode, near[mode]);
+                else snprintf(cur, sizeof cur, "Auto (now %dx, %s)", now, near[now]);
+                if (ImGui::BeginCombo("Resolution", cur)) {
+                    if (ImGui::Selectable("Auto: suits your window", mode == 0)) { scale_pick = 0; later(apply_scale); }
+                    for (int m = 2; m <= 8; m++) {
+                        char lab[64];
+                        snprintf(lab, sizeof lab, "%dx  (%s)%s", m, near[m], m >= 6 ? "  - needs a strong graphics card" : "");
+                        if (ImGui::Selectable(lab, mode == m)) { scale_pick = m; later(apply_scale); }
+                    }
+                    ImGui::EndCombo();
+                }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("How sharp the game is drawn, in times the PS2's resolution.\n"
+                                      "Higher than your screen also smooths jagged edges (anti-aliasing),\n"
+                                      "but needs more from your graphics card.");
+            }
             ImGui::Separator();
             ImGui::TextDisabled("Widescreen layout");
             toggle_row("HUD at the screen's edges", gpu_option(OPT_HUD_EDGES), flip_hud,

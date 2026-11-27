@@ -1,5 +1,13 @@
 # Status
 
+## Resolution setting (anti-aliasing) (2026-11-27)
+
+F1 > Video > Resolution: Auto (about 1.5 times the window's height, up to 4x, as before) or a fixed 2x to 8x the PS2's
+(labelled about 900p / 1440p / 1800p / 4K / 5K / 6K / 7K). More than the window is supersampling: smoother edges,
+nothing blurred. Kept in the settings folder (`scale`, 0 = auto; `MSSAGA_SCALE` still wins); applied at the next
+picture through the existing rescale. Each render target is a 1024 x scale square (8x: 256 MB each), so 6x and up
+say they need a strong graphics card. Played: works.
+
 ## Cheats (F1 > Cheats) (2026-11-27)
 
 `port/runtime/cheats.c` applies cheat codes at each vertical blank (kernel.c, after the pads), as a PS2 cheat device
