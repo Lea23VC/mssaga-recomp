@@ -508,6 +508,68 @@ static void draw_bounds(const GpuDraw *d, const GpuVertex *m, float *x0, float *
     }
 }
 
+/* MS Saga: the HUD at the 16:9 screen's edges, as the HD remasters do. Over 3D reaching the sides (the field, a
+   battle), the 2D kept 4:3 is grouped into elements (draws touching or overlapping, 3D boxes like the minimap's view
+   with them) and each element wholly in the left half goes to the screen's left edge, each wholly in the right half
+   to its right edge; one crossing the middle stays. Not moved again: what portrait_shifts / marker_shifts moved,
+   bands across the screen. Menus and other pictures without 3D at the sides stay in the middle 4:3, and so does the
+   battle HUD for now (its menus, status panels and name bars are loose layers that don't touch what they belong
+   to: moved this way they came apart). MSSAGA_HUD_EDGES=0: all in the middle, as before. */
+static void hud_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
+    static int on = -1;
+    if (on < 0) on = !(getenv("MSSAGA_HUD_EDGES") && !atoi(getenv("MSSAGA_HUD_EDGES")));
+    int game_in_battle(void);                           /* discord.c: which DLL is loaded */
+    if (!on || !wide_3d || game_in_battle()) return;   /* a battle's HUD is made of loose layers: not yet */
+    enum { MAXE = 1024 };
+    static u32 idx[MAXE];
+    static int parent[MAXE];
+    static float bb[MAXE][4];
+    u32 n = 0;
+    for (u32 i = 0; i < f->ndraws && n < MAXE; i++) {
+        GpuDraw *d = &f->draws[i];
+        if (!d->count || !kept_43(d, wide_3d) || anchored(d, wide_3d) || d->marker || d->shift != 0.0f || d->fullw) continue;
+        if (d->box && d->scissor[3] - d->scissor[2] >= 300) continue;     /* a split scene's half */
+        float x0, x1, y0, y1;
+        draw_bounds(d, m, &x0, &x1, &y0, &y1);
+        if (d->box) {                                   /* 3D in a box: the box is what it covers */
+            x0 = fmaxf(x0, (float)d->scissor[0]); x1 = fminf(x1, (float)d->scissor[1] + 1.0f);
+            y0 = fmaxf(y0, (float)d->scissor[2]); y1 = fminf(y1, (float)d->scissor[3] + 1.0f);
+        }
+        idx[n] = i;
+        parent[n] = (int)n;
+        bb[n][0] = x0; bb[n][1] = x1; bb[n][2] = y0; bb[n][3] = y1;
+        n++;
+    }
+    /* a layer across nearly the whole screen (a battle's translucent panels over the scene) stays and joins nothing:
+       through it everything would be one element crossing the middle */
+    static u8 stays[MAXE];
+    for (u32 a = 0; a < n; a++) stays[a] = bb[a][1] - bb[a][0] > (float)(f->draws[idx[a]].fbw * 64) * 0.8f;
+    /* elements: the other draws whose rectangles touch (2 pixels of slack) */
+    for (u32 a = 0; a < n; a++)
+        for (u32 b = a + 1; b < n; b++) {
+            if (stays[a] || stays[b]) continue;
+            if (bb[a][0] > bb[b][1] + 2 || bb[b][0] > bb[a][1] + 2 || bb[a][2] > bb[b][3] + 2 || bb[b][2] > bb[a][3] + 2) continue;
+            int ra = (int)a, rb = (int)b;
+            while (parent[ra] != ra) ra = parent[ra];
+            while (parent[rb] != rb) rb = parent[rb];
+            if (ra != rb) parent[rb] = ra;
+        }
+    static float eb[MAXE][2];                           /* each element's left and right */
+    for (u32 a = 0; a < n; a++) { eb[a][0] = 1e9f; eb[a][1] = -1e9f; }
+    for (u32 a = 0; a < n; a++) {
+        int r = (int)a;
+        while (parent[r] != r) r = parent[r];
+        parent[a] = r;
+        eb[r][0] = fminf(eb[r][0], bb[a][0]);
+        eb[r][1] = fmaxf(eb[r][1], bb[a][1]);
+    }
+    for (u32 a = 0; a < n; a++) {
+        GpuDraw *d = &f->draws[idx[a]];
+        float c = (float)(d->fbw * 32), l = eb[parent[a]][0], r = eb[parent[a]][1];
+        d->shift = stays[a] ? 0.0f : r <= c ? -0.25f * c : l >= c ? 0.25f * c : 0.0f;
+    }
+}
+
 static void portrait_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
     static int on = -1;
     if (on < 0) on = !(getenv("MSSAGA_WIDE_PORTRAITS") && !atoi(getenv("MSSAGA_WIDE_PORTRAITS")));
@@ -516,7 +578,7 @@ static void portrait_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
     float shift[MAXP];
     for (u32 i = 0; i < f->ndraws; i++) f->draws[i].shift = 0.0f;
     marker_shifts(f, m, wide_3d);
-    if (!on) return;
+    if (!on) { hud_shifts(f, m, wide_3d); return; }
     for (u32 i = 0; i < f->ndraws && nbox < MAXP; i++) {
         const GpuDraw *d = &f->draws[i];
         if (!d->box || d->scissor[2] >= 180) continue;
@@ -563,6 +625,7 @@ static void portrait_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
             if (in) { d->shift = shift[k]; break; }
         }
     }
+    hud_shifts(f, m, wide_3d);
 }
 
 static void upload_verts(SDL_GPUCommandBuffer *cmd, GpuFrame *f, const GpuVertex *verts) {

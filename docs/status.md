@@ -1,5 +1,18 @@
 # Status
 
+## 16:9: field HUD at the screen's edges, as the remasters do (2026-11-26)
+
+Over 3D reaching the sides, the 2D kept 4:3 is grouped into elements (draws whose rectangles touch, 3D boxes like
+the minimap's view with them; layers across more than 80% of the width join nothing) and each element wholly in the
+left half goes to the 16:9 screen's left edge, wholly in the right half to its right edge; one crossing the middle
+stays (`gpu_vk.c` hud_shifts). Field: the radar at the top-left corner, the minimap at the bottom-right; dialogue
+boxes crossing the middle stay; menus (no 3D at the sides) stay in the middle 4:3. `MSSAGA_HUD_EDGES=0`: as before.
+
+**Battles are left out** (`game_in_battle()`, from the DLL loaded: `sento`): their command menus, status panels and
+name bars are loose layers that don't touch what they belong to (a menu's second page behind it, the strip behind the
+names): moved by this rule they came apart. To do: rules per element of the battle HUD, from F9 clips (command menu,
+weapon list, status panels, enemy names). Replays don't know a battle is running: they show the battle HUD moved.
+
 ## 16:9: a portrait's text box goes with it (2026-11-26)
 
 When a dialogue portrait is moved to the screen's edge (portrait_shifts), its text box now goes with it: the largest
