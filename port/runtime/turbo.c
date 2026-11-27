@@ -29,6 +29,12 @@ static int on = -1, factor;
 static void load(void) {
     const char *e = getenv("MSSAGA_TURBO");
     factor = e ? atoi(e) : 2;
+    if (!e) {                                           /* the menu's choice */
+        char sp[1100], sb[8];
+        display_config_path(sp, sizeof sp, "turbo_speed");
+        FILE *sf = fopen(sp, "r");
+        if (sf) { if (fgets(sb, sizeof sb, sf)) factor = atoi(sb); fclose(sf); }
+    }
     if (factor < 2) factor = 2;
     if (factor > 4) factor = 4;
     char path[1100], buf[8] = "0";
@@ -37,6 +43,21 @@ static void load(void) {
     if (f) { if (!fgets(buf, sizeof buf, f)) buf[0] = '0'; fclose(f); }
     on = atoi(buf) != 0;
     if (getenv("MSSAGA_TURBO_ON")) on = atoi(getenv("MSSAGA_TURBO_ON")) != 0;   /* scripted tests */
+}
+
+/* the settings menu (menu.cpp): the multiplier, kept in the settings folder (file `turbo_speed`) */
+int turbo_factor(void) {
+    if (on < 0) load();
+    return factor;
+}
+
+void turbo_set_factor(int n) {
+    if (on < 0) load();
+    factor = n < 2 ? 2 : n > 4 ? 4 : n;
+    char path[1100];
+    display_config_path(path, sizeof path, "turbo_speed");
+    FILE *f = fopen(path, "w");
+    if (f) { fprintf(f, "%d\n", factor); fclose(f); }
 }
 
 /* Tab (display.c) */

@@ -1,5 +1,19 @@
 # Status
 
+## Settings menu (F1 / Start+Select) with Dear ImGui (2026-11-27)
+
+`port/gs/menu.cpp` (C++, behind a few C functions) draws a settings window with Dear ImGui v1.91.9b
+(`port/third_party/imgui`, MIT, `licenses/DearImGui-MIT.txt`; SDL3 + SDL_GPU backends) over the picture, after
+`present_into` in `gpu_present`. Tabs: Video (16:9, V-Sync, window size, HUD at the edges, portraits at the edges,
+sides picture), Gameplay (turbo, x2/x3/x4), Misc (performance panel, Discord at the next start); Close, Exit game
+(confirmed). F1 opens it (the window size moved into it); Start+Select on the first gamepad too. While it is open the
+game gets no buttons (`poll_pads`) but keeps running; keyboard, mouse and gamepad navigate it. Choices are applied
+between pictures (`menu_run_pending`): done at once, V-Sync rebuilt the swapchain the menu was drawing into (a crash in
+the NVIDIA driver). The three layout options are kept in the settings folder (`hud_edges`, `portraits`,
+`sides_picture`; their environment variables still win), turbo's speed in `turbo_speed`. The window size button
+restores a maximized window first (a maximized window ignored the size). Both builds compile the C++ with g++ and link
+with it (Windows: `-static-libstdc++`, ~1.5 MB more). Played: works, V-Sync and window sizes included.
+
 ## Noisy sky in the village cutscene fixed; turbo; subtitles and portraits in 16:9 (2026-11-27)
 
 **Sky / trees noise** (the Zakus attacking the village, not every run; the software GS too): the cutscene streams a

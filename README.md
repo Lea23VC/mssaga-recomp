@@ -21,7 +21,8 @@ Nothing from the game is in this repository or in its releases. You need your ow
   battle). It's on by default; `--discord off`, or a file named `discord` containing `0` in the settings folder,
   turns it off.
 - **Keys:** arrows, Z/X/A/S = Cross/Circle/Square/Triangle, Q/W/E/R = L1/R1/L2/R2, Enter = Start,
-  Backspace = Select. F1 window size, F2 widescreen, F3 performance panel, F4 V-Sync, F9 records the next few
+  Backspace = Select. F1 (or Start+Select on a gamepad) opens the settings menu: widescreen, window
+  size, V-Sync, HUD layout, turbo and more. F2 widescreen, F3 performance panel, F4 V-Sync, F9 records the next few
   seconds of graphics for a bug report (`gsrec_*.gsrec` in the settings folder; started with
   `MSSAGA_GSREC_BACK=5`, it keeps the last 5 seconds in memory and F9 saves those too, to catch a glitch after
   seeing it). Tab: turbo, gameplay at double speed on maps and in battles (music and voices stay at normal

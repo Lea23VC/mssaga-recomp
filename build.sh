@@ -80,8 +80,13 @@ for src in port/*.c port/runtime/*.c port/kernel/*.c port/iop/*.c port/hle/*.c p
     echo "$src"
 done | xargs -P"$(nproc)" -I{} sh -c \
     'gcc -c '"$PORT_CFLAGS $PORT_INC"' {} -o "build/port/$(echo {} | tr / _ | sed "s/\.c$/.o/")" || exit 255'
+# the settings menu (port/gs/menu.cpp) and Dear ImGui (port/third_party/imgui, MIT) are C++
+for src in port/gs/*.cpp port/third_party/imgui/*.cpp; do
+    echo "$src"
+done | xargs -P"$(nproc)" -I{} sh -c \
+    'g++ -c -O2 -std=c++17 -w '"$SDL_CFLAGS"' -Iport/third_party/imgui {} -o "build/port/$(echo {} | tr / _ | sed "s/\.cpp$/.o/")" || exit 255'
 # -rdynamic: the VU1 programs compiled at run time (port/gs/vu_jit.c) call the interpreter's functions in here
-LINK="gcc -rdynamic build/port/*.o build/obj/*.o build/dll/obj/*.o $SDL_LIBS -lpthread -lm -ldl"
+LINK="g++ -rdynamic build/port/*.o build/obj/*.o build/dll/obj/*.o $SDL_LIBS -lpthread -lm -ldl"
 
 # Two stages: build/mssaga-stage1, with no VU1 programs built in, writes the game's VU1 programs as C (--gen-vu,
 # found in the executable's .data); the final build/mssaga (and build-win.sh's mssaga.exe) has them compiled in,

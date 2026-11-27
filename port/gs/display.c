@@ -168,7 +168,26 @@ u16 training_pad(u16 buttons);
 int training_hud(SDL_Surface *surf);
 void gpu_set_hud(const u32 *px, int w, int h);      /* gpu_vk.c */
 
+int menu_open(void);                                 /* menu.cpp: the settings menu */
+void menu_toggle(void);
+int menu_event(const SDL_Event *e);
+int menu_init(SDL_Window *win, SDL_GPUDevice *dev, SDL_GPUTextureFormat fmt);
+SDL_GPUDevice *gpu_device(void);                     /* gpu_vk.c */
+SDL_GPUTextureFormat gpu_swap_format(void);
+
 static void poll_pads(void) {
+    {   /* START + SELECT on the first gamepad: the settings menu */
+        static int was;
+        int both = gamepads[0] && SDL_GetGamepadButton(gamepads[0], SDL_GAMEPAD_BUTTON_START) &&
+                   SDL_GetGamepadButton(gamepads[0], SDL_GAMEPAD_BUTTON_BACK);
+        if (both && !was) menu_toggle();
+        was = both;
+    }
+    if (menu_open()) {                               /* the game gets nothing while the menu is open */
+        pad_buttons[0] = pad_buttons[1] = 0;
+        for (int k = 0; k < 2; k++) for (int i = 0; i < 4; i++) pad_sticks[k][i] = 0x80;
+        return;
+    }
     pad_buttons[0] = training_pad(keyboard() | gamepad_buttons(0) | scripted(kernel_vblank_count()));
     scripted_stick(kernel_vblank_count());
     pad_buttons[1] = gamepad_buttons(1);
@@ -445,6 +464,7 @@ static void win_size_load(void) {
 static void win_size_apply(SDL_Window *win) {
     if (!win_size.w) { SDL_SetWindowFullscreen(win, true); return; }
     SDL_SetWindowFullscreen(win, false);
+    if (SDL_GetWindowFlags(win) & SDL_WINDOW_MAXIMIZED) SDL_RestoreWindow(win);   /* a maximized window ignores a size */
     SDL_SetWindowSize(win, win_size.w, win_size.h);
     SDL_SetWindowPosition(win, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 }
@@ -474,6 +494,10 @@ static void win_size_next(SDL_Window *win) {
     else rt_log("display", "full screen");
 }
 
+/* menu.cpp */
+static SDL_Window *the_win;
+void display_win_size_next(void) { if (the_win) win_size_next(the_win); }
+
 static SDL_Window *win_create(void) {
     win_size_load();
     SDL_Window *win = SDL_CreateWindow("MS Saga: A New Dawn", win_size.w ? win_size.w : 1920,
@@ -484,6 +508,8 @@ static SDL_Window *win_create(void) {
 
 static Panel panel;
 static int panel_on = 1;
+int display_panel_on(void) { return panel_on; }       /* menu.cpp */
+void display_panel_set(int on) { panel_on = on != 0; }
 /* (VU1 time includes the XGKICKs it makes, which gs_ns counts too) */
 
 static double cpu_seconds(void) { return platform_cpu_seconds(); }
@@ -584,6 +610,8 @@ static void overlay_update(void) {
 static int display_window_gpu(void) {
     SDL_Window *win = win_create();
     if (!win || gpu_init(win)) return -1;
+    the_win = win;
+    if (menu_init(win, gpu_device(), gpu_swap_format())) rt_log("display", "the settings menu could not start");
     int interp = getenv("MSSAGA_INTERP") && atoi(getenv("MSSAGA_INTERP"));   /* MS Saga: off unless asked (artifacts) */
     GpuFrame *fa = NULL, *fb = NULL;    /* the frame before, the newest */
     u64 tb = 0, period = 20000000;      /* when the newest came; time between frames (ns) */
@@ -594,7 +622,7 @@ static int display_window_gpu(void) {
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_EVENT_QUIT) { SDL_Quit(); _exit(0); }
             gamepad_event(&e);
-            if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F1 && !e.key.repeat) win_size_next(win);
+            if (menu_event(&e)) continue;                   /* F1 / the open menu takes it */
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F2 && !e.key.repeat) widescreen_toggle();
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F3) panel_on = !panel_on;
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F4) gpu_set_vsync(!gpu_vsync());
@@ -613,6 +641,10 @@ static int display_window_gpu(void) {
             if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) training_key(e.key.scancode);
         }
         poll_pads();
+        {
+            void menu_run_pending(void);                    /* menu.cpp: what was chosen, between pictures */
+            menu_run_pending();
+        }
         u32 vb = kernel_vblank_count();
         if (vb != last_vb) {
             last_vb = vb;
@@ -642,7 +674,11 @@ static int display_window_gpu(void) {
         if (!fb) { SDL_Delay(1); continue; }
         float t = interp && fa ? (float)(now - tb) / (float)period : 1.0f;
         if (t >= 1.0f) {
-            if (final_shown) { SDL_Delay(1); continue; }
+            if (final_shown) {
+                if (menu_open()) { gpu_present(); SDL_Delay(8); continue; }   /* the menu moves between the game's pictures */
+                SDL_Delay(1);
+                continue;
+            }
             t = 1.0f;
             final_shown = 1;
         }

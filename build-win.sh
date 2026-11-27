@@ -16,6 +16,8 @@ cd "$(dirname "$0")"
 
 CC=x86_64-w64-mingw32-gcc-posix                 # Ubuntu's name; Arch's plain one is POSIX threads already
 command -v $CC >/dev/null || CC=x86_64-w64-mingw32-gcc
+CXX=x86_64-w64-mingw32-g++-posix                # the settings menu and Dear ImGui are C++
+command -v $CXX >/dev/null || CXX=x86_64-w64-mingw32-g++
 SDL=tools/win/SDL3-3.2.30/x86_64-w64-mingw32
 command -v $CC >/dev/null || { echo "missing MinGW-w64: pacman -S mingw-w64-gcc (or apt install mingw-w64)"; exit 1; }
 [ -d "$SDL" ] || { echo "missing $SDL: run tools/win_deps.sh"; exit 1; }
@@ -45,6 +47,8 @@ compile() {   # opt, files...
 compile -O1 build/recomp/*.c build/dll/c/*.c
 compile -O2 build/vu/*.c                       # the game's VU1 programs (build.sh writes them; none at run time here)
 compile -O2 port/*.c port/runtime/*.c port/kernel/*.c port/iop/*.c port/hle/*.c port/gs/*.c port/iop/lle/*.c
+for src in port/gs/*.cpp port/third_party/imgui/*.cpp; do echo "$src"; done | xargs -P"$(nproc)" -I{} sh -c \
+    'o=build-win/obj/$(echo {} | tr / _ | sed "s/\.cpp$/.o/"); [ "$o" -nt {} ] || '"$CXX"' -c -O2 -std=c++17 -w -I'"$SDL"'/include -Iport/third_party/imgui {} -o "$o" || { echo "FAILED: {}"; exit 255; }'
 
 # the icon (tools/make_icon.py draws it), as a Windows resource. MSSAGA_ICON=file.ico ./build-win.sh uses that one
 # instead, for a build of your own: don't publish one carrying art that isn't yours to share
@@ -58,7 +62,7 @@ printf '1 ICON "mssaga.ico"\n' > build-win/obj/mssaga.rc
 (cd build-win/obj && x86_64-w64-mingw32-windres mssaga.rc -O coff -o mssaga_rc.res)
 
 # a window program (no console of its own)
-$CC -static-libgcc -mwindows -o build-win/mssaga.exe build-win/obj/*.o build-win/obj/mssaga_rc.res -L$SDL/lib -lSDL3 $FF_LIBS \
+$CXX -static-libgcc -static-libstdc++ -mwindows -o build-win/mssaga.exe build-win/obj/*.o build-win/obj/mssaga_rc.res -L$SDL/lib -lSDL3 $FF_LIBS \
     -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic -lm
 cp "$SDL/bin/SDL3.dll" build-win/
 [ -z "$FF" ] || for l in avformat avcodec avutil swscale swresample; do cp "$FF"/bin/$l-*.dll build-win/; done

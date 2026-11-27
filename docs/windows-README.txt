@@ -18,7 +18,8 @@ A gamepad (Xbox, PlayStation, ...) works as a DualShock 2. Keyboard:
   Enter        Start              A   Square        S   Triangle
   Backspace    Select             Q/W L1 / R1       E/R L2 / R2
 
-  F1   window size (and full screen)
+  F1   settings menu (also Start+Select on a gamepad): widescreen, window
+       size and full screen, V-Sync, HUD layout, turbo, Discord
   F2   widescreen 16:9 on / off (remembered)
   F3   performance panel
   F4   vsync on / off

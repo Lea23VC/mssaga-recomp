@@ -36,7 +36,7 @@
     },
     {
       "id": "window", "label": "Window", "in": "args",
-      "help": "The window's size when the game starts. F1 changes it in the game.",
+      "help": "The window's size when the game starts. The settings menu (F1) changes it in the game.",
       "choices": [
         { "label": "Game's option", "args": [] },
         { "label": "Full screen", "args": ["--window", "full"] },

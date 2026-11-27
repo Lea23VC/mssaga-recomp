@@ -418,6 +418,39 @@ static int frame_wide_3d(const GpuFrame *f) {
     return 0;
 }
 
+/* MS Saga: widescreen layout options, switched in the settings menu (menu.cpp) and kept in the settings folder; the
+   environment variable, when set, wins */
+enum { OPT_HUD_EDGES, OPT_PORTRAITS, OPT_SIDES, OPT_N };
+static const char *opt_env[OPT_N] = {"MSSAGA_HUD_EDGES", "MSSAGA_WIDE_PORTRAITS", "MSSAGA_SIDES"};
+static const char *opt_file[OPT_N] = {"hud_edges", "portraits", "sides_picture"};
+static int opt_val[OPT_N] = {-1, -1, -1};
+void display_config_path(char *p, size_t n, const char *name);     /* display.c */
+
+int gpu_option(int which) {
+    if (which < 0 || which >= OPT_N) return 0;
+    if (opt_val[which] < 0) {
+        const char *e = getenv(opt_env[which]);
+        char path[1100], buf[8] = "1";
+        if (e) snprintf(buf, sizeof buf, "%s", e);
+        else {
+            display_config_path(path, sizeof path, opt_file[which]);
+            FILE *f = fopen(path, "r");
+            if (f) { if (!fgets(buf, sizeof buf, f)) buf[0] = '1'; fclose(f); }
+        }
+        opt_val[which] = atoi(buf) != 0;
+    }
+    return opt_val[which];
+}
+
+void gpu_set_option(int which, int on) {
+    if (which < 0 || which >= OPT_N) return;
+    opt_val[which] = on != 0;
+    char path[1100];
+    display_config_path(path, sizeof path, opt_file[which]);
+    FILE *f = fopen(path, "w");
+    if (f) { fprintf(f, "%d\n", opt_val[which]); fclose(f); }
+}
+
 static int kept_43(const GpuDraw *d, int wide_3d) { return d->flat2d && !(wide_3d && d->fullw); }
 
 /* A 2D picture covering the whole 16:9 screen (a story scene's layer zoomed or panned past the 4:3
@@ -519,8 +552,7 @@ static void draw_bounds(const GpuDraw *d, const GpuVertex *m, float *x0, float *
    one stays, right one to the right edge). Menus and other pictures without 3D at the sides stay in the middle 4:3.
    MSSAGA_HUD_EDGES=0: as before. MSSAGA_REPLAY_BATTLE=1: a replay is taken as a battle (it loads no DLL). */
 static void hud_shifts(GpuFrame *f, GpuVertex *m, int wide_3d) {
-    static int on = -1;
-    if (on < 0) on = !(getenv("MSSAGA_HUD_EDGES") && !atoi(getenv("MSSAGA_HUD_EDGES")));
+    int on = gpu_option(OPT_HUD_EDGES);
     for (u32 i = 0; i < f->ndraws; i++) f->draws[i].spread = 0;
     if (!on || !wide_3d) return;
     enum { MAXU = 4096 };
@@ -628,8 +660,7 @@ static void hud_shifts(GpuFrame *f, GpuVertex *m, int wide_3d) {
 }
 
 static void portrait_shifts(GpuFrame *f, GpuVertex *m, int wide_3d) {
-    static int on = -1;
-    if (on < 0) on = !(getenv("MSSAGA_WIDE_PORTRAITS") && !atoi(getenv("MSSAGA_WIDE_PORTRAITS")));
+    int on = gpu_option(OPT_PORTRAITS);
     enum { MAXP = 4 };
     u32 box[MAXP][4], nbox = 0;
     float shift[MAXP];
@@ -1107,7 +1138,7 @@ static void note_letterbox(const GpuFrame *f) {
         }
     }
     int now = top && bottom;
-    if (now != letterboxed && (rt_verbose || getenv("MSSAGA_LETTERBOX_LOG"))) rt_log("gpu", "letterbox %s", now ? "on (a cutscene)" : "off");
+    if (now != letterboxed && getenv("MSSAGA_LETTERBOX_LOG")) rt_log("gpu", "letterbox %s", now ? "on (a cutscene)" : "off");
     letterboxed = now;
 }
 
@@ -1237,8 +1268,6 @@ static int sides_w, sides_h, sides_state = -1;  /* -1 not looked for yet, 0 none
 
 static void sides_load(void) {
     sides_state = 0;
-    const char *e = getenv("MSSAGA_SIDES");
-    if (e && !atoi(e)) return;
     char path[1100];
     display_config_path(path, sizeof path, "sides.png");
     SDL_Surface *s = SDL_LoadPNG(path);
@@ -1363,7 +1392,7 @@ static void present_into(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *swap, u32 sw
         SDL_BindGPUGraphicsPipeline(rp, present_pipe);
         if (fill) {                      /* the sides (black, a picture, or blurred), then only the middle of the picture */
             if (sides_state < 0) sides_load();
-            if (sides_state > 0 && !blur_on && shows) {   /* the picture over the whole 16:9, its top kept */
+            if (sides_state > 0 && !blur_on && shows && gpu_option(OPT_SIDES)) {   /* the picture over the whole 16:9, its top kept */
                 float iw = (float)sides_w, ih = (float)sides_h, va = vw / vh;
                 float r[4] = {0, 0, 1, 1};
                 if (iw / ih < va) r[3] = (iw / va) / ih;           /* taller than 16:9: its top part */
@@ -1438,8 +1467,14 @@ void gpu_present(void) {
         want_scale = scale_for((int)sh < ph ? (int)sh : ph);
     }
     present_into(cmd, swap, sw, sh);
+    void menu_draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target);    /* menu.cpp: the settings menu */
+    menu_draw(cmd, swap);
     SDL_SubmitGPUCommandBuffer(cmd);
 }
+
+/* menu.cpp draws with the same device into the window's texture */
+SDL_GPUDevice *gpu_device(void) { return dev; }
+SDL_GPUTextureFormat gpu_swap_format(void) { return swap_fmt; }
 
 /* For --shot with MSSAGA_SHOT_PRESENT=WxH: the picture as a window that size would show it. */
 int gpu_read_presented(u32 *out, int w, int h) {
