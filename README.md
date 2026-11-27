@@ -25,7 +25,7 @@ Nothing from the game is in this repository or in its releases. You need your ow
   seconds of graphics for a bug report (`gsrec_*.gsrec` in the settings folder; started with
   `MSSAGA_GSREC_BACK=5`, it keeps the last 5 seconds in memory and F9 saves those too, to catch a glitch after
   seeing it). Tab: turbo, gameplay at double speed on maps and in battles (music and voices stay at normal
-  speed). A gamepad works as a DualShock 2.
+  speed; cutscenes play at normal speed). A gamepad works as a DualShock 2.
 - **Widescreen sides:** screens drawn only in 4:3 (menus, title) have black sides; a picture of your own named
   `sides.png` in the settings folder is shown there instead (dimmed, its top part).
 

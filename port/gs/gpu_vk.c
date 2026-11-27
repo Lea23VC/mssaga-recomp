@@ -1083,9 +1083,38 @@ static void frame_logs(const GpuFrame *f) {
 /* A recorded frame drawn on the GPU (verts: NULL, or the vertices moved for an interpolated frame). */
 static u32 frames_rendered;             /* pictures the game drew: the clock of the sides.png switch */
 
+/* MS Saga: the last picture is a cutscene's: the game draws its letterbox as two opaque black rectangles across the
+   whole width, one at the top and one at the bottom (the 3D under them runs to the edges; the two arrive as one
+   draw). runtime/turbo.c: no speed-up in cutscenes. */
+static volatile int letterboxed;
+int gpu_letterboxed(void) { return letterboxed; }
+
+static void note_letterbox(const GpuFrame *f) {
+    int top = 0, bottom = 0;
+    for (u32 i = 0; i < f->ndraws && !(top && bottom); i++) {
+        const GpuDraw *d = &f->draws[i];
+        if (d->textured || !d->flat2d || d->count % 3) continue;
+        const GpuVertex *v = &f->verts[d->first];
+        if (v->r > 1.0f || v->g > 1.0f || v->b > 1.0f || v->a < 126.0f) continue;    /* opaque black */
+        float fw = (float)(d->fbw * 64), fh = (float)(d->scissor[3] + 1);
+        for (u32 t = d->first; t + 2 < d->first + d->count; t += 3) {
+            const GpuVertex *a = &f->verts[t], *b = &f->verts[t + 1], *c = &f->verts[t + 2];
+            float x0 = fminf(a->x, fminf(b->x, c->x)), x1 = fmaxf(a->x, fmaxf(b->x, c->x));
+            float y0 = fminf(a->y, fminf(b->y, c->y)), y1 = fmaxf(a->y, fmaxf(b->y, c->y));
+            if (x0 > 1.0f || x1 < fw - 1.0f) continue;
+            if (y0 <= 1.0f && y1 >= 16.0f && y1 <= fh * 0.25f) top = 1;
+            if (y1 >= fh - 1.0f && y0 <= fh - 16.0f && y0 >= fh * 0.75f) bottom = 1;
+        }
+    }
+    int now = top && bottom;
+    if (now != letterboxed && (rt_verbose || getenv("MSSAGA_LETTERBOX_LOG"))) rt_log("gpu", "letterbox %s", now ? "on (a cutscene)" : "off");
+    letterboxed = now;
+}
+
 
 void gpu_render(GpuFrame *f, const GpuVertex *verts) {
     frames_rendered++;
+    if (f && f->ndraws) note_letterbox(f);
     if (want_scale && want_scale != scale) rescale(want_scale);
     if (!dev || !f || !f->ndraws) return;
     if (inflight[inflight_at]) {

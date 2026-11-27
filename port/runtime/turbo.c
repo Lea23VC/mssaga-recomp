@@ -8,8 +8,8 @@
  *
  * Tab switches it (kept in the settings folder, file `turbo`); it applies only on a map or in a battle (the DLL
  * loaded), never while a movie plays, and only while the music plays alone (no voice playing: the game is changing
- * tracks, entering a battle; two or more: a voice or a jingle over the music, a voiced scene). A cutscene's lines
- * before its first voice still run faster: cutscenes aren't recognised yet. MSSAGA_TURBO=<n>: the multiplier (2 if not given, 2..4).
+ * tracks, entering a battle; two or more: a voice or a jingle over the music, a voiced scene), and never in a
+ * cutscene (its letterbox bars on screen: gpu_letterboxed). MSSAGA_TURBO=<n>: the multiplier (2 if not given, 2..4).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +22,7 @@ int game_in_battle(void);                                           /* discord.c
 int game_on_map(void);                                              /* discord.c */
 int movie_active(void);                                             /* hle/movie.c */
 int cri_voices_playing(void);                                       /* iop/cri_adxi.c */
+int gpu_letterboxed(void);                                          /* gs/gpu_vk.c */
 
 static int on = -1, factor;
 
@@ -62,5 +63,6 @@ int turbo_speed(void) {
        its wait for the battle theme ran out and the theme never started), two or more is a voice or a jingle on top
        (a voiced scene): normal speed for those */
     if (cri_voices_playing() != 1) return 1;
+    if (gpu_letterboxed()) return 1;                    /* a cutscene (letterbox bars): its own pace */
     return factor;
 }

@@ -16,7 +16,9 @@ game counts in vertical blanks, so the kernel's timer fires n times as often; mu
 driver keep their real-time clocks. Only on a map or in a battle (`game_on_map` / `game_in_battle`), not during a
 movie, and only while exactly one ADX voice plays (none: changing tracks, entering a battle, where at x2 the battle
 theme's wait ran out and it never started; two or more: a voice line or jingle over the music). Known: a cutscene's
-lines before its first voice still run faster (cutscenes aren't recognised yet: their letterbox isn't drawn as bars).
+lines before its first voice ran faster at first; now cutscenes are recognised by their letterbox: the game draws
+the bars as two opaque black rectangles across the whole width, top and bottom (merged into one draw, the 3D under
+them reaching the edges); with both on screen (`gpu_letterboxed`), turbo stays at normal speed. Played: works.
 
 **16:9 fixes**: a subtitle without a box (cutscenes) had its words spread to both edges by the HUD layout: units of a
 line's height side by side within 24 pixels are now one element. A centre portrait overlapping a moved side
