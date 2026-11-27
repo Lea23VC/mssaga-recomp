@@ -1,17 +1,21 @@
 # Status
 
-## 16:9: field HUD at the screen's edges, as the remasters do (2026-11-26)
+## 16:9: the HUD at the screen's edges, as the remasters do (2026-11-26)
 
-Over 3D reaching the sides, the 2D kept 4:3 is grouped into elements (draws whose rectangles touch, 3D boxes like
-the minimap's view with them; layers across more than 80% of the width join nothing) and each element wholly in the
-left half goes to the 16:9 screen's left edge, wholly in the right half to its right edge; one crossing the middle
-stays (`gpu_vk.c` hud_shifts). Field: the radar at the top-left corner, the minimap at the bottom-right; dialogue
-boxes crossing the middle stay; menus (no 3D at the sides) stay in the middle 4:3. `MSSAGA_HUD_EDGES=0`: as before.
-
-**Battles are left out** (`game_in_battle()`, from the DLL loaded: `sento`): their command menus, status panels and
-name bars are loose layers that don't touch what they belong to (a menu's second page behind it, the strip behind the
-names): moved by this rule they came apart. To do: rules per element of the battle HUD, from F9 clips (command menu,
-weapon list, status panels, enemy names). Replays don't know a battle is running: they show the battle HUD moved.
+Over 3D reaching the sides, the 2D kept 4:3 goes to the 16:9 screen's edges by element (`gpu_vk.c` hud_shifts). The
+units are triangles, not draws: the game draws many pieces of different elements with the same state and they arrive
+merged (a battle's menu page, the strip behind a name and the enemy bar's back in one draw). Triangles touching (2
+pixels of slack) make an element; a 3D box (the minimap's view) is one unit, its scissor; a layer across the whole
+width stays and joins nothing. An element wholly in the left half goes to the left edge, wholly in the right half to
+the right edge; one crossing the middle stays. A draw whose triangles moved is not cut at 4:3 (GpuDraw.spread).
+- Field: radar top-left, minimap bottom-right; dialogue boxes crossing the middle stay.
+- Battle: command menus left, enemy name bars right, windows crossing the middle (item list, weapon list) whole and
+  centred; the party row below the scene (y >= 312) goes by its three slots: left slot to the left edge (in line with
+  the menu), middle stays, right slot to the right edge; a piece wider than a slot stays. Not seen yet: three members
+  and the reserve row under them.
+- Menus and other pictures without 3D at the sides stay in the middle 4:3.
+`MSSAGA_HUD_EDGES=0`: as before. Battles are known from the DLL loaded (`game_in_battle`); replays load none:
+`MSSAGA_REPLAY_BATTLE=1` takes one as a battle.
 
 ## 16:9: a portrait's text box goes with it (2026-11-26)
 

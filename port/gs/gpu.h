@@ -43,6 +43,7 @@ typedef struct {
     u32 covers;                 /* 2D picture covering the whole 16:9 screen: the sides show its art */
     u32 box;                    /* MS Saga: 3D drawn into a box of the screen (a portrait, the minimap's view) */
     float shift;                /* MS Saga: widescreen, set by the renderer: kept 4:3 but moved this far (portraits, markers) */
+    u32 spread;                 /* MS Saga: widescreen, set by the renderer: its triangles moved one by one (hud_shifts): not cut at 4:3 */
     u32 marker;                 /* MS Saga: 2D marking something in the 3D (a target, a unit's range): over everything, mid-depth */
     u32 first, count;           /* vertices */
 } GpuDraw;

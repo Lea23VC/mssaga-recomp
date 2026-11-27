@@ -509,52 +509,87 @@ static void draw_bounds(const GpuDraw *d, const GpuVertex *m, float *x0, float *
 }
 
 /* MS Saga: the HUD at the 16:9 screen's edges, as the HD remasters do. Over 3D reaching the sides (the field, a
-   battle), the 2D kept 4:3 is grouped into elements (draws touching or overlapping, 3D boxes like the minimap's view
-   with them) and each element wholly in the left half goes to the screen's left edge, each wholly in the right half
-   to its right edge; one crossing the middle stays. Not moved again: what portrait_shifts / marker_shifts moved,
-   bands across the screen. Menus and other pictures without 3D at the sides stay in the middle 4:3, and so does the
-   battle HUD for now (its menus, status panels and name bars are loose layers that don't touch what they belong
-   to: moved this way they came apart). MSSAGA_HUD_EDGES=0: all in the middle, as before. */
-static void hud_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
+   battle), the 2D kept 4:3 is grouped into elements and each element wholly in the left half goes to the screen's
+   left edge, each wholly in the right half to its right edge; one crossing the middle stays. The units are triangles,
+   not draws: the game draws many pieces of different elements with the same state and they arrive as one draw (a
+   battle's menu page, the strip behind a name and the enemy bar's back, in one); triangles touching (2 pixels of
+   slack) make an element. A 3D box (the minimap's view) is one unit, its scissor. A layer across the whole width
+   stays and joins nothing (a window nearly as wide, the battle's item list, holds its pieces together). Not moved again: what portrait_shifts / marker_shifts moved, bands across the
+   screen. In a battle, the party row below the scene goes by its three slots (left slot to the left edge, middle
+   one stays, right one to the right edge). Menus and other pictures without 3D at the sides stay in the middle 4:3.
+   MSSAGA_HUD_EDGES=0: as before. MSSAGA_REPLAY_BATTLE=1: a replay is taken as a battle (it loads no DLL). */
+static void hud_shifts(GpuFrame *f, GpuVertex *m, int wide_3d) {
     static int on = -1;
     if (on < 0) on = !(getenv("MSSAGA_HUD_EDGES") && !atoi(getenv("MSSAGA_HUD_EDGES")));
-    int game_in_battle(void);                           /* discord.c: which DLL is loaded */
-    if (!on || !wide_3d || game_in_battle()) return;   /* a battle's HUD is made of loose layers: not yet */
-    enum { MAXE = 1024 };
-    static u32 idx[MAXE];
-    static int parent[MAXE];
-    static float bb[MAXE][4];
+    for (u32 i = 0; i < f->ndraws; i++) f->draws[i].spread = 0;
+    if (!on || !wide_3d) return;
+    enum { MAXU = 4096 };
+    static u32 udraw[MAXU], ufirst[MAXU];             /* the draw, and the triangle's first vertex (~0u: the whole box) */
+    static int parent[MAXU];
+    static float bb[MAXU][4], eb[MAXU][2];
+    static u8 stays[MAXU];
     u32 n = 0;
-    for (u32 i = 0; i < f->ndraws && n < MAXE; i++) {
+    for (u32 i = 0; i < f->ndraws && n < MAXU; i++) {
         GpuDraw *d = &f->draws[i];
         if (!d->count || !kept_43(d, wide_3d) || anchored(d, wide_3d) || d->marker || d->shift != 0.0f || d->fullw) continue;
-        if (d->box && d->scissor[3] - d->scissor[2] >= 300) continue;     /* a split scene's half */
-        float x0, x1, y0, y1;
-        draw_bounds(d, m, &x0, &x1, &y0, &y1);
-        if (d->box) {                                   /* 3D in a box: the box is what it covers */
-            x0 = fmaxf(x0, (float)d->scissor[0]); x1 = fminf(x1, (float)d->scissor[1] + 1.0f);
-            y0 = fmaxf(y0, (float)d->scissor[2]); y1 = fminf(y1, (float)d->scissor[3] + 1.0f);
+        if (d->box) {                                   /* 3D in a box: one unit, what it covers */
+            if (d->scissor[3] - d->scissor[2] >= 300) continue;           /* a split scene's half */
+            udraw[n] = i; ufirst[n] = ~0u;
+            bb[n][0] = (float)d->scissor[0]; bb[n][1] = (float)d->scissor[1] + 1.0f;
+            bb[n][2] = (float)d->scissor[2]; bb[n][3] = (float)d->scissor[3] + 1.0f;
+            n++;
+            continue;
         }
-        idx[n] = i;
-        parent[n] = (int)n;
-        bb[n][0] = x0; bb[n][1] = x1; bb[n][2] = y0; bb[n][3] = y1;
-        n++;
+        if (d->count % 3) continue;
+        for (u32 t = d->first; t < d->first + d->count && n < MAXU; t += 3) {
+            udraw[n] = i; ufirst[n] = t;
+            bb[n][0] = fminf(m[t].x, fminf(m[t + 1].x, m[t + 2].x)); bb[n][1] = fmaxf(m[t].x, fmaxf(m[t + 1].x, m[t + 2].x));
+            bb[n][2] = fminf(m[t].y, fminf(m[t + 1].y, m[t + 2].y)); bb[n][3] = fmaxf(m[t].y, fmaxf(m[t + 1].y, m[t + 2].y));
+            n++;
+        }
     }
-    /* a layer across nearly the whole screen (a battle's translucent panels over the scene) stays and joins nothing:
-       through it everything would be one element crossing the middle */
-    static u8 stays[MAXE];
-    for (u32 a = 0; a < n; a++) stays[a] = bb[a][1] - bb[a][0] > (float)(f->draws[idx[a]].fbw * 64) * 0.8f;
-    /* elements: the other draws whose rectangles touch (2 pixels of slack) */
-    for (u32 a = 0; a < n; a++)
-        for (u32 b = a + 1; b < n; b++) {
-            if (stays[a] || stays[b]) continue;
-            if (bb[a][0] > bb[b][1] + 2 || bb[b][0] > bb[a][1] + 2 || bb[a][2] > bb[b][3] + 2 || bb[b][2] > bb[a][3] + 2) continue;
+    for (u32 a = 0; a < n; a++) {
+        parent[a] = (int)a;
+        stays[a] = bb[a][1] - bb[a][0] > (float)(f->draws[udraw[a]].fbw * 64) - 2.0f;   /* the whole width */
+    }
+    /* a battle's party row (the band below the scene: up to three status panels in fixed slots, the reserve
+       members' names under them): each slot follows its column, the left one to the screen's left edge (where the
+       command menu goes), the middle one staying, the right one to the right edge (under the enemy bars) */
+    static s8 slot[MAXU];
+    int game_in_battle(void);                           /* discord.c: which DLL is loaded */
+    static int replay_battle = -1;
+    if (replay_battle < 0) replay_battle = getenv("MSSAGA_REPLAY_BATTLE") && atoi(getenv("MSSAGA_REPLAY_BATTLE"));
+    int battle = replay_battle || game_in_battle();
+    for (u32 a = 0; a < n; a++) {
+        slot[a] = 0;
+        if (!battle || ufirst[a] == ~0u || stays[a]) continue;
+        float fw = (float)(f->draws[udraw[a]].fbw * 64), cy = 0.5f * (bb[a][2] + bb[a][3]), cx = 0.5f * (bb[a][0] + bb[a][1]);
+        if (cy < 312.0f || fw < 400.0f) continue;      /* above the band (the scene, the menu, the enemy bars) */
+        if (bb[a][1] - bb[a][0] > fw / 3.0f * 1.2f) { stays[a] = 1; continue; }   /* across slots: stays */
+        slot[a] = cx < fw / 3.0f ? 1 : cx > fw * 2.0f / 3.0f ? 3 : 2;
+        stays[a] = 1;                                   /* placed by its slot, joins nothing */
+    }
+    /* elements: units whose rectangles touch; sorted by left edge, so only neighbours in x are compared */
+    static u32 order[MAXU];
+    for (u32 a = 0; a < n; a++) order[a] = a;
+    for (u32 a = 1; a < n; a++) {                       /* insertion sort: mostly in order already */
+        u32 v = order[a], j = a;
+        while (j > 0 && bb[order[j - 1]][0] > bb[v][0]) { order[j] = order[j - 1]; j--; }
+        order[j] = v;
+    }
+    for (u32 ia = 0; ia < n; ia++) {
+        u32 a = order[ia];
+        if (stays[a]) continue;
+        for (u32 ib = ia + 1; ib < n; ib++) {
+            u32 b = order[ib];
+            if (bb[b][0] > bb[a][1] + 2) break;
+            if (stays[b] || bb[a][2] > bb[b][3] + 2 || bb[b][2] > bb[a][3] + 2) continue;
             int ra = (int)a, rb = (int)b;
             while (parent[ra] != ra) ra = parent[ra];
             while (parent[rb] != rb) rb = parent[rb];
             if (ra != rb) parent[rb] = ra;
         }
-    static float eb[MAXE][2];                           /* each element's left and right */
+    }
     for (u32 a = 0; a < n; a++) { eb[a][0] = 1e9f; eb[a][1] = -1e9f; }
     for (u32 a = 0; a < n; a++) {
         int r = (int)a;
@@ -564,13 +599,18 @@ static void hud_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
         eb[r][1] = fmaxf(eb[r][1], bb[a][1]);
     }
     for (u32 a = 0; a < n; a++) {
-        GpuDraw *d = &f->draws[idx[a]];
+        GpuDraw *d = &f->draws[udraw[a]];
         float c = (float)(d->fbw * 32), l = eb[parent[a]][0], r = eb[parent[a]][1];
-        d->shift = stays[a] ? 0.0f : r <= c ? -0.25f * c : l >= c ? 0.25f * c : 0.0f;
+        float sh = slot[a] == 1 ? -0.25f * c : slot[a] == 3 ? 0.25f * c :
+                   stays[a] ? 0.0f : r <= c ? -0.25f * c : l >= c ? 0.25f * c : 0.0f;
+        if (ufirst[a] == ~0u) { d->shift = sh; continue; }
+        if (sh == 0.0f) continue;
+        for (u32 k = ufirst[a]; k < ufirst[a] + 3; k++) m[k].x += sh / 0.75f;   /* before the 3/4 narrowing */
+        d->spread = 1;
     }
 }
 
-static void portrait_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
+static void portrait_shifts(GpuFrame *f, GpuVertex *m, int wide_3d) {
     static int on = -1;
     if (on < 0) on = !(getenv("MSSAGA_WIDE_PORTRAITS") && !atoi(getenv("MSSAGA_WIDE_PORTRAITS")));
     enum { MAXP = 4 };
@@ -970,6 +1010,7 @@ static SDL_Rect draw_scissor(const Replay *r, const GpuDraw *d) {
         int x1 = (int)((c + ((float)d->scissor[1] + 1 - c) * 0.75f + d->shift) * scale);
         sc.x = x0;
         sc.w = x1 - x0;
+        if (d->spread) { sc.x = 0; sc.w = (int)(2.0f * c) * scale; }   /* its pieces moved to the screen's edges */
     }
     return sc;
 }
