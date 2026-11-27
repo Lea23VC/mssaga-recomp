@@ -1,5 +1,13 @@
 # Status
 
+## 16:9: a portrait's text box goes with it (2026-11-26)
+
+When a dialogue portrait is moved to the screen's edge (portrait_shifts), its text box now goes with it: the largest
+2D panel starting just below the portrait (within 48 lines) and overlapping it sideways is taken as its box (the
+game lines them up), and every 2D draw on that box (text, frame, the arrow, which pokes out a few pixels) gets the
+same shift. Dialogue without a portrait stays in the middle; the radar and minimap don't move. Checked on the hangar
+dialogue (Tristan's portrait at the left). A portrait on the right side hasn't been seen yet.
+
 ## F9 can save the seconds before it (2026-11-26)
 
 `MSSAGA_GSREC_BACK=<seconds>` (up to 20; off by default): the recorder keeps a ring of one-second segments in memory,

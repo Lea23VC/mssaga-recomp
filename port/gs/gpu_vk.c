@@ -501,6 +501,13 @@ static void marker_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
     }
 }
 
+static void draw_bounds(const GpuDraw *d, const GpuVertex *m, float *x0, float *x1, float *y0, float *y1) {
+    *x0 = *y0 = 1e9f; *x1 = *y1 = -1e9f;
+    for (u32 q = d->first; q < d->first + d->count; q++) {
+        *x0 = fminf(*x0, m[q].x); *x1 = fmaxf(*x1, m[q].x); *y0 = fminf(*y0, m[q].y); *y1 = fmaxf(*y1, m[q].y);
+    }
+}
+
 static void portrait_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
     static int on = -1;
     if (on < 0) on = !(getenv("MSSAGA_WIDE_PORTRAITS") && !atoi(getenv("MSSAGA_WIDE_PORTRAITS")));
@@ -521,18 +528,37 @@ static void portrait_shifts(GpuFrame *f, const GpuVertex *m, int wide_3d) {
         float c = (float)(d->fbw * 32), cx = 0.5f * ((float)d->scissor[0] + (float)d->scissor[1] + 1.0f);
         shift[nbox++] = cx < 0.85f * c ? -0.25f * c : cx > 1.15f * c ? 0.25f * c : 0.0f;
     }
+    /* the portrait's text box: the largest 2D panel starting just below the portrait and overlapping it sideways (the
+       game lines them up); it goes with the portrait, with what lies on it (the text, its frame, the arrow) */
+    float tb[MAXP][4];
+    for (u32 k = 0; k < nbox; k++) {
+        float best = 0.0f;
+        tb[k][0] = 1.0f; tb[k][1] = 0.0f;                   /* none */
+        if (shift[k] == 0.0f) continue;
+        for (u32 i = 0; i < f->ndraws; i++) {
+            const GpuDraw *d = &f->draws[i];
+            if (d->box || !kept_43(d, wide_3d) || anchored(d, wide_3d) || !d->count) continue;
+            float x0, x1, y0, y1;
+            draw_bounds(d, m, &x0, &x1, &y0, &y1);
+            float a = (x1 - x0) * (y1 - y0);
+            if (y0 < (float)box[k][3] - 4.0f || y0 > (float)box[k][3] + 48.0f) continue;
+            if (x1 < (float)box[k][0] || x0 > (float)box[k][1] + 1.0f || a <= best) continue;
+            best = a;
+            tb[k][0] = x0; tb[k][1] = x1; tb[k][2] = y0; tb[k][3] = y1;
+        }
+    }
     for (u32 i = 0; i < f->ndraws && nbox; i++) {
         GpuDraw *d = &f->draws[i];
         if (!kept_43(d, wide_3d) || anchored(d, wide_3d)) continue;
         for (u32 k = 0; k < nbox; k++) {
             int in = d->box && !memcmp(box[k], d->scissor, sizeof box[k]);
             if (!in) {                              /* 2D on the box: within it, give or take its frame */
-                float x0 = 1e9f, x1 = -1e9f, y0 = 1e9f, y1 = -1e9f;
-                for (u32 q = d->first; q < d->first + d->count; q++) {
-                    x0 = fminf(x0, m[q].x); x1 = fmaxf(x1, m[q].x); y0 = fminf(y0, m[q].y); y1 = fmaxf(y1, m[q].y);
-                }
+                float x0, x1, y0, y1;
+                draw_bounds(d, m, &x0, &x1, &y0, &y1);
                 float e = 10.0f;
                 in = x0 >= box[k][0] - e && x1 <= box[k][1] + 1 + e && y0 >= box[k][2] - e && y1 <= box[k][3] + 1 + e;
+                if (!in && tb[k][1] > tb[k][0])     /* or on its text box */
+                    in = x0 >= tb[k][0] - e && x1 <= tb[k][1] + e && y0 >= tb[k][2] - e && y1 <= tb[k][3] + e;
             }
             if (in) { d->shift = shift[k]; break; }
         }
