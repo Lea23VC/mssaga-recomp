@@ -5,7 +5,7 @@ set -eu
 cd "$(dirname "$0")"
 mkdir -p linux/dl
 cd linux
-SDL=3.2.30
+SDL=3.4.20
 [ -s "dl/SDL3-$SDL.tar.gz" ] ||
     curl -fsSL -o "dl/SDL3-$SDL.tar.gz" "https://github.com/libsdl-org/SDL/releases/download/release-$SDL/SDL3-$SDL.tar.gz"
 [ -d "SDL3-$SDL" ] || tar xzf "dl/SDL3-$SDL.tar.gz"

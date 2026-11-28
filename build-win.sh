@@ -18,7 +18,7 @@ CC=x86_64-w64-mingw32-gcc-posix                 # Ubuntu's name; Arch's plain on
 command -v $CC >/dev/null || CC=x86_64-w64-mingw32-gcc
 CXX=x86_64-w64-mingw32-g++-posix                # the settings menu and Dear ImGui are C++
 command -v $CXX >/dev/null || CXX=x86_64-w64-mingw32-g++
-SDL=tools/win/SDL3-3.2.30/x86_64-w64-mingw32
+SDL=tools/win/SDL3-3.4.20/x86_64-w64-mingw32
 command -v $CC >/dev/null || { echo "missing MinGW-w64: pacman -S mingw-w64-gcc (or apt install mingw-w64)"; exit 1; }
 [ -d "$SDL" ] || { echo "missing $SDL: run tools/win_deps.sh"; exit 1; }
 [ -f build/recomp/functab.c ] && [ -f build/dll/c/dlls.c ] && [ -f build/shaders/shaders.h ] && [ -f build/vu/vu_builtin.c ] || {
@@ -71,7 +71,7 @@ rm -f build-win/mssaga.bat                     # (older builds: it held one pers
 cp docs/windows-README.txt build-win/README.txt
 cp recomplauncher.json build-win/              # RecompLauncher reads it from the top of the release zip
 mkdir -p build-win/licenses
-cp licenses/SaintSeiyaRecomp-MIT.txt licenses/DearImGui-MIT.txt build-win/licenses/
-cp tools/win/SDL3-3.2.30/LICENSE.txt build-win/licenses/SDL3-zlib.txt
+cp licenses/SaintSeiyaRecomp-MIT.txt licenses/DearImGui-MIT.txt licenses/xxHash-BSD-2-Clause.txt build-win/licenses/
+cp tools/win/SDL3-3.4.20/LICENSE.txt build-win/licenses/SDL3-zlib.txt
 [ -z "$FF" ] || cp "$FF"/LICENSE.txt build-win/licenses/FFmpeg-LGPL.txt
 echo "built build-win/mssaga.exe"

@@ -11,7 +11,7 @@
 # Needs docker (or podman: MSSAGA_DOCKER=podman). The program finds its libraries in lib/ next to it (rpath $ORIGIN/lib).
 set -eu
 cd "$(dirname "$0")"
-SDLV=3.2.30
+SDLV=3.4.20
 FF=$(ls -d tools/linux/ffmpeg-*-linux64-lgpl-shared-* 2>/dev/null | head -1)
 [ -d "tools/linux/SDL3-$SDLV" ] && [ -n "$FF" ] || { echo "missing tools/linux: run tools/linux_deps.sh"; exit 1; }
 [ -f build/recomp/functab.c ] && [ -f build/dll/c/dlls.c ] && [ -f build/shaders/shaders.h ] && [ -f build/vu/vu_builtin.c ] || {

@@ -451,11 +451,12 @@ static int frame_wide_3d(const GpuFrame *f) {
 
 /* MS Saga: widescreen layout options, switched in the settings menu (menu.cpp) and kept in the settings folder; the
    environment variable, when set, wins */
-enum { OPT_HUD_EDGES, OPT_PORTRAITS, OPT_SIDES, OPT_FXAA, OPT_N };
-static const char *opt_env[OPT_N] = {"MSSAGA_HUD_EDGES", "MSSAGA_WIDE_PORTRAITS", "MSSAGA_SIDES", "MSSAGA_FXAA"};
-static const char *opt_file[OPT_N] = {"hud_edges", "portraits", "sides_picture", "fxaa"};
-static const char *opt_default[OPT_N] = {"1", "1", "1", "0"};
-static int opt_val[OPT_N] = {-1, -1, -1, -1};
+enum { OPT_HUD_EDGES, OPT_PORTRAITS, OPT_SIDES, OPT_FXAA, OPT_TEXPACK, OPT_N };
+static const char *opt_env[OPT_N] = {"MSSAGA_HUD_EDGES", "MSSAGA_WIDE_PORTRAITS", "MSSAGA_SIDES", "MSSAGA_FXAA",
+                                     "MSSAGA_TEXTURE_PACK"};
+static const char *opt_file[OPT_N] = {"hud_edges", "portraits", "sides_picture", "fxaa", "texture_pack"};
+static const char *opt_default[OPT_N] = {"1", "1", "1", "0", "1"};
+static int opt_val[OPT_N] = {-1, -1, -1, -1, -1};
 void display_config_path(char *p, size_t n, const char *name);     /* display.c */
 
 int gpu_option(int which) {
@@ -482,7 +483,16 @@ void gpu_set_option(int which, int on) {
     display_config_path(path, sizeof path, opt_file[which]);
     FILE *f = fopen(path, "w");
     if (f) { fprintf(f, "%d\n", opt_val[which]); fclose(f); }
+    if (which == OPT_TEXPACK) {                 /* every texture decoded again, with or without the pack's */
+        void texpack_pcsx2_set(int on);
+        void gs_textures_reset(void);
+        texpack_pcsx2_set(on);
+        gs_textures_reset();
+    }
 }
+
+/* texpack.c: the HD texture pack's setting */
+int texpack_option(void) { return gpu_option(OPT_TEXPACK); }
 
 static int kept_43(const GpuDraw *d, int wide_3d) { return d->flat2d && !(wide_3d && d->fullw); }
 

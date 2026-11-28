@@ -548,6 +548,9 @@ static GpuFrame frames[NFRAMES], *rec = &frames[0];
 static GpuFrame *sealed[NFRAMES], *free_frames[NFRAMES];
 static int nsealed, nfree;
 static u32 rec_frame = 1;                  /* frames sealed */
+static volatile int tex_reset_req;         /* gs_textures_reset: at the next frame's end */
+static void tex_reset_all(void);
+void gs_textures_reset(void) { tex_reset_req = 1; }   /* the settings menu (the texture pack switched) */
 static u32 last_seal_vb;
 
 static u32 vram_writes;                     /* bumped with any page_gen */
@@ -633,6 +636,10 @@ static void seal_locked(void) {
     rec = free_frames[--nfree];
     rec->ndraws = rec->nverts = rec->nuploads = rec->nfrees = 0;
     rec_frame++;
+    if (tex_reset_req) {                       /* the texture pack switched: every texture decoded again */
+        tex_reset_req = 0;
+        tex_reset_all();
+    }
     last_seal_vb = kernel_vblank_count();
 }
 
@@ -704,7 +711,8 @@ static u32 tex_by_pixels[16384];
 static TexEnt tex_ents[GPU_MAX_TEX];
 static u32 tex_free[GPU_MAX_TEX], ntex_free, tex_inited;
 static u64 tex_bytes;
-#define TEX_BUDGET (256ull << 20)
+int texpack_pcsx2_on(void);
+#define TEX_BUDGET (texpack_pcsx2_on() ? 2048ull << 20 : 256ull << 20)   /* an HD pack: its textures are larger */
 
 typedef struct { u64 key[3]; u64 ckey[3]; u32 idx; } TexFast;   /* (TEX0, TEXA, page versions) -> entry */
 static TexFast tex_fast[8192];
@@ -777,6 +785,12 @@ static void tex_release(u32 i) {
     rec->frees[rec->nfrees++] = i;
 }
 
+static void tex_reset_all(void) {
+    for (u32 i = 1; i < GPU_MAX_TEX; i++)
+        if (tex_ents[i].used) tex_release(i);
+    rt_log("tex", "textures dropped: decoded again");
+}
+
 /* A free entry for w x h, dropping the least recently used ones (never those of this frame). */
 static u32 tex_alloc(u32 w, u32 h) {
     if (!tex_inited) {
@@ -808,6 +822,10 @@ int texpack_pictures_on(void);
 void texpack_dump_picture(u64 pic, const u32 *px, u32 stride, u32 x, u32 y, u32 w, u32 h);
 int texpack_has_hd(u64 pic);
 u32 *texpack_load_hd(u64 pic, u32 *w, u32 *h);
+int texpack_pcsx2_on(void);
+s32 texpack_pcsx2_find(u64 t, u64 c, u32 bits);
+u32 *texpack_pcsx2_get(s32 i, u32 *w, u32 *h, u32 now, int *failed);
+u32 texpack_pcsx2_done(void);
 
 /* The entry holding a picture's replacement (texpack.c's hd/), loaded and queued for upload the first
    time or after it was dropped; 0 when there is none. */
@@ -1085,6 +1103,110 @@ static void find_pictures(TexEnt *e, const u32 *px, u32 tbp, u32 tbw, u32 psm, u
     }
 }
 
+static u64 gs_tex0_now;                                 /* texture_for: the TEX0 being looked up */
+
+/* MS Saga: a texture's name in a PCSX2 texture pack (texpack.c), worked out as PCSX2 does
+   (GSTextureCache::HashCacheKey::Create, GSTextureReplacements::CreateTextureName):
+     texture hash: xxHash3 of the GS memory blocks the texture reads, row by row of blocks; a texture smaller than a
+                   block (or a region of one) instead of its texels read out, a byte each for 4 and 8 bits (the
+                   index), four for 32 (as stored), a row of the texture at a time;
+     palette hash: xxHash3 of the 16 or 256 colours in index order (32-bit, as the CLUT holds them), for 4 and 8 bits;
+     bits:         the format, log2 of the width and height (TEX0's TW, TH), and for 16-bit formats TEXA's TA0, AEM, TA1.
+   Only the formats MS Saga's textures use (8 and 4 bits, 32-bit colour): 0 for the others. */
+#define XXH_INLINE_ALL
+#define XXH_NO_STDLIB
+#include "../third_party/xxhash/xxhash.h"
+static int pcsx2_name(u32 tbp, u32 tbw, u32 psm, u32 tlw, u32 tlh, u32 cbp, u32 cpsm, u32 csa, u64 *t_out,
+                      u64 *c_out, u32 *bits_out) {
+    if (psm != 0x00 && psm != 0x13 && psm != 0x14) return 0;
+    u32 tw = 1u << tlw, th = 1u << tlh, bw = tbw ? tbw : 1;
+    if (tw > 1024 || th > 1024) return 0;
+    u32 bsx = psm == 0x14 ? 32 : psm == 0x13 ? 16 : 8, bsy = psm == 0x00 ? 8 : 16;
+    XXH3_state_t st;
+    XXH3_64bits_reset(&st);
+    if (tw < bsx || th < bsy) {                          /* smaller than a block: its texels */
+        static u8 row[4096];
+        for (u32 y = 0; y < th; y++) {
+            for (u32 x = 0; x < tw; x++) {
+                if (psm == 0x13) {
+                    u32 a = ((tbp + (y >> 6) * 32 * (bw >> 1) + (x >> 7) * 32) << 8) + in8[y & 63][x & 127];
+                    row[x] = (u8)(vram[(a >> 2) & 0xFFFFF] >> ((a & 3) * 8));
+                } else if (psm == 0x14) {
+                    u32 a = ((tbp + (y >> 7) * 32 * (bw >> 1) + (x >> 7) * 32) << 9) + in4[y & 127][x & 127];
+                    row[x] = (vram[(a >> 3) & 0xFFFFF] >> ((a & 7) * 4)) & 15;
+                } else {
+                    u32 c = vram[(((tbp + (y >> 5) * 32 * bw + (x >> 6) * 32) << 6) + in32[0][y & 31][x & 63]) & 0xFFFFF];
+                    memcpy(row + x * 4, &c, 4);
+                }
+            }
+            XXH3_64bits_update(&st, row, psm ? tw : tw * 4);
+        }
+    } else                                               /* whole blocks, 256 bytes each, left to right, top to bottom */
+        for (u32 y = 0; y < th; y += bsy)
+            for (u32 x = 0; x < tw; x += bsx) {
+                u32 byte;
+                if (psm == 0x13) byte = ((tbp + (y >> 6) * 32 * (bw >> 1) + (x >> 7) * 32) << 8) + in8[y & 63][x & 127];
+                else if (psm == 0x14) byte = (((tbp + (y >> 7) * 32 * (bw >> 1) + (x >> 7) * 32) << 9) + in4[y & 127][x & 127]) >> 1;
+                else byte = (((tbp + (y >> 5) * 32 * bw + (x >> 6) * 32) << 6) + in32[0][y & 31][x & 63]) << 2;
+                XXH3_64bits_update(&st, (const u8 *)vram + (byte & 0x3FFF00), 256);
+            }
+    *t_out = XXH3_64bits_digest(&st);
+    *c_out = 0;
+    if (psm != 0x00) {
+        u32 pal[256], n = psm == 0x13 ? 256 : 16;
+        if (n == 256) palette8(pal, cbp, cpsm);
+        else
+            for (u32 i = 0; i < 16; i++) {
+                u32 c = i + (csa & 15) * 16;
+                pal[i] = expand(vram_rw(cbp, 1, cpsm, c & 7, (c >> 3) & 31, 0, 0), cpsm);
+            }
+        *c_out = XXH3_64bits(pal, n * 4);
+    }
+    *bits_out = psm | tlw << 6 | tlh << 10;
+    return 1;
+}
+
+/* Textures drawn as the game's own while their replacement from a PCSX2 pack is read: (entry, pack index). Each
+   one read is uploaded into its entry, if the entry still holds that texture (hd_wait).
+   At most HD_FRAME_BYTES of them a frame: back on a map after a battle, the map's textures (read already) all came
+   back at once, a hundred megabytes uploaded in one frame (a hitch); the rest wait for the next frames. At 16 MB
+   a frame it still dropped one leaving a battle: four large ones, ~48 ms. */
+typedef struct { u32 idx; s32 p2; } HdWait;
+#define MAX_HD_WAITS 4096
+#define HD_FRAME_BYTES (6u << 20)                      /* a 1024 x 1024 one (4 MB) took 12 ms to upload */
+static HdWait hd_waits[MAX_HD_WAITS];
+static u32 nhd_waits, hd_seen_done, hd_poll_frame, hd_frame, hd_frame_bytes;
+static u32 hd_wait_of[GPU_MAX_TEX];                    /* the pack index + 1 an entry waits for, 0 none */
+
+static int hd_room(void) {                             /* this frame may take another replacement */
+    if (hd_frame != rec_frame) { hd_frame = rec_frame; hd_frame_bytes = 0; }
+    return hd_frame_bytes < HD_FRAME_BYTES;
+}
+
+static void hd_waits_poll(void) {
+    if (!nhd_waits || (texpack_pcsx2_done() == hd_seen_done && hd_poll_frame == rec_frame)) return;
+    hd_seen_done = texpack_pcsx2_done();
+    hd_poll_frame = rec_frame;
+    for (u32 k = 0; k < nhd_waits && hd_room();) {
+        HdWait *h = &hd_waits[k];
+        int drop = !tex_ents[h->idx].used || hd_wait_of[h->idx] != (u32)h->p2 + 1, failed = 0;
+        u32 w = 0, hh = 0, *px = drop ? NULL : texpack_pcsx2_get(h->p2, &w, &hh, rec_frame, &failed);
+        if (px) {
+            hd_frame_bytes += w * hh * 4;
+            TexEnt *e = &tex_ents[h->idx];
+            tex_bytes += (u64)w * hh * 4 - (u64)e->w * e->h * 4;
+            e->w = w;
+            e->h = hh;
+            GROW(rec->uploads, rec->nuploads, rec->cap_uploads, GpuTexUpload);
+            rec->uploads[rec->nuploads++] = (GpuTexUpload){h->idx, w, hh, px, 0, 0, 0, 0, 0};
+        }
+        if (px || drop || failed) {
+            hd_wait_of[h->idx] = 0;
+            *h = hd_waits[--nhd_waits];
+        } else k++;
+    }
+}
+
 /* A texture not seen with this content (ckey): decoded from the GS memory into a new entry, or
    replaced (a texture pack's PNG, or a text drawn with the font file), and queued for upload.
    Returns the entry, 0 when there is no room. */
@@ -1098,6 +1220,23 @@ static u32 texture_new(const u64 ckey[3], u32 tbp, u32 tbw, u32 psm, u32 tw, u32
        original's size in texels) */
     texpack_dump(name, px, tw, th);
     u32 uw = tw, uh = th, *rp = texpack_find(name, &uw, &uh), rect[4] = {0, 0, 0, 0}, fill = 0;
+    hd_wait_of[idx] = 0;
+    if (!rp && texpack_pcsx2_on()) {                    /* a PCSX2 pack's: at once if read already, else later */
+        u64 t, c;
+        u32 bits, lw = (gs_tex0_now >> 26) & 15, lh = (gs_tex0_now >> 30) & 15;
+        s32 p = pcsx2_name(tbp, tbw, psm, lw, lh, cbp, cpsm, csa, &t, &c, &bits) ? texpack_pcsx2_find(t, c, bits) : -1;
+        if (p >= 0) {
+            int failed = 0;
+            if (hd_room()) {                            /* else drawn as the game's own for now */
+                rp = texpack_pcsx2_get(p, &uw, &uh, rec_frame, &failed);
+                if (rp) hd_frame_bytes += uw * uh * 4;
+            }
+            if (!rp && !failed && nhd_waits < MAX_HD_WAITS) {
+                hd_wait_of[idx] = (u32)p + 1;
+                hd_waits[nhd_waits++] = (HdWait){idx, p};
+            }
+        }
+    }
     int font = 0;
     if (!rp && psm == 0x13 && textfont_active()) {      /* a text the game wrote: drawn with the font file */
         u8 *ix = malloc((size_t)tw * th);
@@ -1138,7 +1277,9 @@ static u32 texture_new(const u64 ckey[3], u32 tbp, u32 tbw, u32 psm, u32 tw, u32
      4. else decoded anew (texture_new). */
 static s32 texture_for(int ctx, u32 *w_out, u32 *h_out) {
     transfer_flush();
+    hd_waits_poll();
     u64 t0 = gs.tex0[ctx];
+    gs_tex0_now = t0;
     u32 tbp = t0 & 0x3FFF, tbw = (t0 >> 14) & 0x3F, psm = (t0 >> 20) & 0x3F;
     u32 tw = 1u << ((t0 >> 26) & 15), th = 1u << ((t0 >> 30) & 15);
     u32 cbp = (t0 >> 37) & 0x3FFF, cpsm = (t0 >> 51) & 15, csa = (t0 >> 56) & 31;

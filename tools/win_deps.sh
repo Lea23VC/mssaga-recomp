@@ -5,7 +5,7 @@ set -eu
 cd "$(dirname "$0")"
 mkdir -p win/dl
 cd win
-SDL=3.2.30
+SDL=3.4.20
 [ -s "dl/SDL3-devel-$SDL-mingw.tar.gz" ] ||
     curl -fsSL -o "dl/SDL3-devel-$SDL-mingw.tar.gz" \
         "https://github.com/libsdl-org/SDL/releases/download/release-$SDL/SDL3-devel-$SDL-mingw.tar.gz"

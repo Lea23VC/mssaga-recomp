@@ -35,6 +35,14 @@ Command line (optional): mssaga.exe --game <your.iso> --data <folder>
 --data keeps everything below in that folder instead of %APPDATA%\mssaga.
 RecompLauncher uses recomplauncher.json (next to mssaga.exe) to set it up.
 
+HD textures
+-----------
+Texture packs made for PCSX2 work as they are: put the pack's SLUS-21270
+folder inside the "textures" folder of %APPDATA%\mssaga, so that
+it reads textures/SLUS-21270/replacements/... F1 > Video > HD texture pack
+switches it. Tested with "MS Saga: A New Dawn HD Textures" by IceBullet:
+https://gbatemp.net/threads/ms-saga-a-new-dawn-hd-textures.662002/
+
 Discord
 -------
 With the Discord app running, your status shows that you're playing (title

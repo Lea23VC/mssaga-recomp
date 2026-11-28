@@ -47,6 +47,7 @@ int controls_pad_busy(void);
 void controls_reset(void);
 int controls_event(const SDL_Event *e);
 SDL_Gamepad *display_gamepad(int k);
+int texpack_pcsx2_count(void);                /* texpack.c: textures in the HD pack */
 int cheats_count(void);                       /* runtime/cheats.c */
 const char *cheats_name(int i);
 const char *cheats_group(int i);
@@ -54,7 +55,7 @@ int cheats_on(int i);
 void cheats_set(int i, int on);
 }
 
-enum { OPT_HUD_EDGES, OPT_PORTRAITS, OPT_SIDES, OPT_FXAA };   /* gpu_vk.c gpu_option */
+enum { OPT_HUD_EDGES, OPT_PORTRAITS, OPT_SIDES, OPT_FXAA, OPT_TEXPACK };   /* gpu_vk.c gpu_option */
 
 static SDL_Window *mwin;
 static int ready, open_, confirm_exit;
@@ -142,6 +143,7 @@ static void flip_hud(void) { gpu_set_option(OPT_HUD_EDGES, !gpu_option(OPT_HUD_E
 static void flip_portraits(void) { gpu_set_option(OPT_PORTRAITS, !gpu_option(OPT_PORTRAITS)); }
 static void flip_sides(void) { gpu_set_option(OPT_SIDES, !gpu_option(OPT_SIDES)); }
 static void flip_fxaa(void) { gpu_set_option(OPT_FXAA, !gpu_option(OPT_FXAA)); }
+static void flip_texpack(void) { gpu_set_option(OPT_TEXPACK, !gpu_option(OPT_TEXPACK)); }
 static void flip_panel(void) { display_panel_set(!display_panel_on()); }
 static void flip_discord(void) { discord_set(!discord_setting()); }
 static int scale_pick;
@@ -202,6 +204,14 @@ static void build(void) {
             toggle_row("FXAA (smooth edges)", gpu_option(OPT_FXAA), flip_fxaa,
                        "Smooths jagged edges at any resolution, cheaply. It also softens text and the HUD a little;\n"
                        "a higher Resolution smooths edges without that, but needs more from the graphics card.");
+            if (texpack_pcsx2_count()) {
+                char lab[96];
+                snprintf(lab, sizeof lab, "HD texture pack (%d textures)", texpack_pcsx2_count());
+                toggle_row(lab, gpu_option(OPT_TEXPACK), flip_texpack,
+                           "A texture pack made for PCSX2, from textures/SLUS-21270 in the settings folder.\n"
+                           "Its textures load in the background: a moment after a new scene, they sharpen.");
+            } else
+                ImGui::TextDisabled("HD texture pack: none (put a PCSX2 pack's SLUS-21270 folder in textures/)");
             ImGui::Separator();
             ImGui::TextDisabled("Widescreen layout");
             toggle_row("HUD at the screen's edges", gpu_option(OPT_HUD_EDGES), flip_hud,

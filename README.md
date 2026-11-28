@@ -32,6 +32,11 @@ Nothing from the game is in this repository or in its releases. You need your ow
   `MSSAGA_GSREC_BACK=5`, it keeps the last 5 seconds in memory and F9 saves those too, to catch a glitch after
   seeing it). Tab: turbo, gameplay at double speed on maps and in battles (music and voices stay at normal
   speed; cutscenes play at normal speed). A gamepad works as a DualShock 2.
+- **HD textures:** texture packs made for PCSX2 work as they are. Put the pack's `SLUS-21270` folder inside
+  the `textures` folder in the settings folder (`textures/SLUS-21270/replacements/...`); F1 → Video → HD texture
+  pack switches it. Textures load in the background, so they sharpen a moment after a new scene appears. A
+  pack we've tested: [MS Saga: A New Dawn HD Textures](https://gbatemp.net/threads/ms-saga-a-new-dawn-hd-textures.662002/)
+  by IceBullet (not included here; get it from its thread).
 - **Widescreen sides:** screens drawn only in 4:3 (menus, title) have black sides; a picture of your own named
   `sides.png` in the settings folder is shown there instead (dimmed, its top part).
 

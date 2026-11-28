@@ -1,5 +1,31 @@
 # Status
 
+## PCSX2 texture packs (2026-11-28)
+
+A pack made for PCSX2 works as it is: `<settings>/textures/SLUS-21270/replacements/**.png`, named
+`<texture hash>-<palette hash>-<bits>.png` (or without the palette hash). gs.c `pcsx2_name` works the names out as
+PCSX2 does (GSTextureCache::HashCacheKey::Create): xxHash3 (vendored, port/third_party/xxhash, BSD-2) of the 256-byte
+GS memory blocks the texture reads, row by row of blocks; a texture smaller than a block hashes its texels read out (a
+byte per 4/8-bit index, 4 per 32-bit colour), a row at a time; the palette hash is xxHash3 of the 16/256 colours in
+index order; bits = PSM | TW << 6 | TH << 10 (TEXA only for 16-bit formats). Bit 14 of a file's bits (an old TCC
+field) is ignored, as PCSX2 does. Checked against IceBullet's pack
+(https://gbatemp.net/threads/ms-saga-a-new-dawn-hd-textures.662002/, 17,259 PNGs, 3.9 GB; formats used: PSMT8,
+PSMT4, PSMCT32 only): 260 of the 270 textures in 7 F9 clips found, exactly; the 10 others aren't in it (one is a
+plain 16x16 filler). The PNGs keep the PS2's alpha (sampled: max 128), read as is (texpack.c's own packs scale 0..255).
+
+texpack.c reads them with two background threads (`texpack_pcsx2_get`); a texture is drawn as the game's own until
+its replacement is in, then uploaded into the same entry (`hd_waits`; the GPU texture is made again at the new size).
+Read ones stay in memory up to 1.5 GB (least recently used dropped); the GPU texture budget is 2 GB with a pack (256
+MB without). At most 6 MB of replacements are uploaded a frame: back on a map after a battle all of the map's came at
+once (read already), a visible drop; a 1024x1024 one (4 MB) took 12 ms to upload (`MSSAGA_REPLAY_SLOW=ms` in a replay
+with `MSSAGA_REPLAY_SHOTS` lists the pictures slower than that and what they uploaded). F1 > Video > HD texture pack
+(file `texture_pack`, `MSSAGA_TEXTURE_PACK`) drops every texture once (`gs_textures_reset`, at a frame's end) so they
+are decoded again with or without it. PNGs need SDL 3.4 (SDL_LoadPNG): the releases moved from SDL 3.2.30 to 3.4.20.
+Played: sharper (faces, hair, eyes), nothing out of place, no hitch after a battle at 6 MB a frame.
+
+Noticed meanwhile: the split scenes (v0.1.11) send ~10x the draws (68,936 in the 5117 clip, was 6,798): their 3D now
+gets `sides` per primitive, so neighbouring primitives no longer join. 3 ms a frame in the replay; to look at.
+
 ## Controls: keys and controller buttons rebindable (2026-11-28)
 
 `port/gs/controls.c`: one keyboard key and one controller button (or trigger) per PS2 button, kept in the settings

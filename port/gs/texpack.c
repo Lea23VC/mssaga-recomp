@@ -350,3 +350,202 @@ u32 *texpack_find(u64 name, u32 *w, u32 *h) {
     *h = l->h;
     return out;
 }
+
+/* ---- PCSX2 texture packs
+ * A pack made for PCSX2 works as it is: <textures>/SLUS-21270/replacements/ (and its subfolders), PNG files named as
+ * PCSX2 names textures: <texture hash>-<palette hash>-<bits>.png, or <texture hash>-<bits>.png without a palette
+ * (gs.c pcsx2_name works the same names out: an xxHash3 of the texture's GS memory blocks and of its palette, the
+ * format and size). The PNGs keep the PS2's alpha (0x80 opaque), as PCSX2 reads them. They are many and large (one
+ * pack: 17,000 files, 4 GB): read by two threads in the background, the texture drawn as the game's own until its
+ * replacement is in; the ones read stay in memory up to a budget, the least recently used dropped beyond it.
+ * F1 > Video > HD texture pack (file `texture_pack`, MSSAGA_TEXTURE_PACK=0) turns them off. */
+typedef struct { u64 t, c; u32 bits, path; } P2Name;   /* path: offset in p2_paths */
+typedef struct { u32 *px; u32 w, h, last; u8 state; } P2Tex;   /* state: 0 not read, 1 queued, 2 ready, 3 failed */
+static P2Name *p2;
+static P2Tex *p2tex;
+static u32 np2, p2_inited;
+static char *p2_paths;
+static size_t p2_paths_len, p2_paths_cap;
+static char p2_dir[1100];
+static SDL_Mutex *p2_mu;
+static SDL_Condition *p2_cv;
+static u32 *p2_queue, p2_qhead, p2_qtail, p2_qcap;  /* ring of indices to read */
+static volatile u32 p2_done;                       /* replacements read so far (gs.c polls it) */
+static u64 p2_bytes;
+#define P2_BUDGET (1536ull << 20)
+static int p2_off = -1;
+
+int texpack_option(void);
+
+static int cmp_p2(const void *a, const void *b) {
+    const P2Name *x = a, *y = b;
+    if (x->t != y->t) return x->t < y->t ? -1 : 1;
+    if (x->c != y->c) return x->c < y->c ? -1 : 1;
+    return x->bits < y->bits ? -1 : x->bits > y->bits;
+}
+
+static void p2_scan(const char *d, int depth) {
+    DIR *dd = opendir(d);
+    if (!dd) return;
+    for (struct dirent *de; (de = readdir(dd));) {
+        if (de->d_name[0] == '.') continue;
+        char path[2048];
+        snprintf(path, sizeof path, "%s/%s", d, de->d_name);
+        size_t n = strlen(de->d_name);
+        if (n > 4 && !strcmp(de->d_name + n - 4, ".png")) {
+            unsigned long long t, c;
+            unsigned bits;
+            char dot;
+            P2Name e = {0, 0, 0, 0};
+            if (sscanf(de->d_name, "%llx-%llx-%08x%c", &t, &c, &bits, &dot) == 4 && dot == '.')
+                e = (P2Name){t, c, bits & ~(1u << 14), 0};      /* bit 14 (an old field, TCC) is ignored, as PCSX2 does */
+            else if (sscanf(de->d_name, "%llx-%08x%c", &t, &bits, &dot) == 3 && dot == '.')
+                e = (P2Name){t, 0, bits & ~(1u << 14), 0};
+            else continue;
+            size_t len = strlen(path) - strlen(p2_dir) + 1;    /* relative to the pack's folder */
+            if (p2_paths_len + len > p2_paths_cap)
+                p2_paths = realloc(p2_paths, p2_paths_cap = (p2_paths_cap + len) * 2);
+            memcpy(p2_paths + p2_paths_len, path + strlen(p2_dir), len);
+            e.path = (u32)p2_paths_len;
+            p2_paths_len += len;
+            static u32 cap;
+            if (np2 == cap) p2 = realloc(p2, (cap = cap ? cap * 2 : 4096) * sizeof *p2);
+            p2[np2++] = e;
+        } else if (depth < 8) {
+            struct stat st;
+            if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) p2_scan(path, depth + 1);
+        }
+    }
+    closedir(dd);
+}
+
+static int SDLCALL p2_worker(void *arg) {
+    (void)arg;
+    for (;;) {
+        SDL_LockMutex(p2_mu);
+        while (p2_qhead == p2_qtail) SDL_WaitCondition(p2_cv, p2_mu);
+        u32 i = p2_queue[p2_qhead++ % p2_qcap];
+        SDL_UnlockMutex(p2_mu);
+        char path[2400];
+        snprintf(path, sizeof path, "%s%s", p2_dir, p2_paths + p2[i].path);
+        SDL_Surface *s = SDL_LoadPNG(path), *c = s ? SDL_ConvertSurface(s, SDL_PIXELFORMAT_ABGR8888) : NULL;
+        if (s) SDL_DestroySurface(s);
+        u32 *px = NULL, w = 0, h = 0;
+        if (c && c->w <= 8192 && c->h <= 8192) {
+            w = (u32)c->w;
+            h = (u32)c->h;
+            px = malloc((size_t)w * h * 4);
+            for (u32 y = 0; px && y < h; y++)               /* alpha as it is: the PS2's scale, as PCSX2 dumps it */
+                memcpy(px + (size_t)y * w, (const u8 *)c->pixels + (size_t)y * c->pitch, (size_t)w * 4);
+        } else
+            rt_log("tex", "%s: %s", path, c ? "larger than 8192" : SDL_GetError());
+        if (c) SDL_DestroySurface(c);
+        SDL_LockMutex(p2_mu);
+        p2tex[i].px = px;
+        p2tex[i].w = w;
+        p2tex[i].h = h;
+        p2tex[i].state = px ? 2 : 3;
+        if (px) p2_bytes += (u64)w * h * 4;
+        p2_done++;
+        SDL_UnlockMutex(p2_mu);
+    }
+    return 0;
+}
+
+static SDL_InitState p2_once;                      /* the GS thread and the menu may both ask first */
+
+static void p2_init(void) {
+    if (!SDL_ShouldInit(&p2_once)) { p2_inited = 1; return; }
+    if (!inited) init();
+    if (packs_off) { SDL_SetInitialized(&p2_once, true); p2_inited = 1; return; }
+    snprintf(p2_dir, sizeof p2_dir, "%s/SLUS-21270/replacements", dir);
+    p2_scan(p2_dir, 0);
+    if (!np2) { SDL_SetInitialized(&p2_once, true); p2_inited = 1; return; }
+    qsort(p2, np2, sizeof *p2, cmp_p2);
+    p2tex = calloc(np2, sizeof *p2tex);
+    p2_qcap = np2 + 1;
+    p2_queue = malloc(p2_qcap * sizeof *p2_queue);
+    p2_mu = SDL_CreateMutex();
+    p2_cv = SDL_CreateCondition();
+    for (int k = 0; k < 2; k++) SDL_DetachThread(SDL_CreateThread(p2_worker, "texpack", NULL));
+    rt_log("tex", "PCSX2 texture pack: %u textures in %s", np2, p2_dir);
+    SDL_SetInitialized(&p2_once, true);
+    p2_inited = 1;
+}
+
+/* a PCSX2 pack is there and on */
+int texpack_pcsx2_on(void) {
+    if (!p2_inited) p2_init();
+    if (p2_off < 0) p2_off = !texpack_option();
+    return np2 && !p2_off;
+}
+
+void texpack_pcsx2_set(int on) { p2_off = !on; }
+
+/* the pack's texture of that name: its index, or -1 */
+s32 texpack_pcsx2_find(u64 t, u64 c, u32 bits) {
+    if (!texpack_pcsx2_on()) return -1;
+    P2Name key = {t, c, bits, 0};
+    P2Name *e = bsearch(&key, p2, np2, sizeof *p2, cmp_p2);
+    if (!e && c) {                                     /* a pack's texture made without its palette's hash */
+        key.c = 0;
+        e = bsearch(&key, p2, np2, sizeof *p2, cmp_p2);
+    }
+    return e ? (s32)(e - p2) : -1;
+}
+
+/* drops the least recently used replacements read, down to the budget (gs thread) */
+static void p2_trim(u32 now) {
+    while (p2_bytes > P2_BUDGET) {
+        u32 old = ~0u, k = ~0u;
+        for (u32 i = 0; i < np2; i++)
+            if (p2tex[i].state == 2 && now - p2tex[i].last >= 2 && (k == ~0u || p2tex[i].last < old)) {
+                old = p2tex[i].last;
+                k = i;
+            }
+        if (k == ~0u) return;
+        free(p2tex[k].px);
+        p2_bytes -= (u64)p2tex[k].w * p2tex[k].h * 4;
+        p2tex[k] = (P2Tex){NULL, 0, 0, 0, 0};
+    }
+}
+
+/* The replacement's pixels (a malloc'd copy, for an upload) and size when it has been read; else NULL, and it is
+   queued to be read (0 in *failed), or it can't be (1). `now`: the frame, for the budget. */
+u32 *texpack_pcsx2_get(s32 i, u32 *w, u32 *h, u32 now, int *failed) {
+    *failed = 0;
+    if (i < 0 || (u32)i >= np2) { *failed = 1; return NULL; }
+    SDL_LockMutex(p2_mu);
+    P2Tex *t = &p2tex[i];
+    u32 *out = NULL;
+    if (t->state == 2) {
+        t->last = now;
+        *w = t->w;
+        *h = t->h;
+        out = malloc((size_t)t->w * t->h * 4);
+        if (out) memcpy(out, t->px, (size_t)t->w * t->h * 4);
+    } else if (t->state == 3) *failed = 1;
+    else if (t->state == 0) {
+        t->state = 1;
+        t->last = now;
+        p2_queue[p2_qtail++ % p2_qcap] = (u32)i;
+        SDL_SignalCondition(p2_cv);
+    }
+    int over = p2_bytes > P2_BUDGET;
+    SDL_UnlockMutex(p2_mu);
+    if (over) {
+        SDL_LockMutex(p2_mu);
+        p2_trim(now);
+        SDL_UnlockMutex(p2_mu);
+    }
+    return out;
+}
+
+/* the pack's textures (0: none): the settings menu */
+int texpack_pcsx2_count(void) {
+    if (!p2_inited) p2_init();
+    return (int)np2;
+}
+
+/* replacements read so far: gs.c looks at the ones it waits for when this changes */
+u32 texpack_pcsx2_done(void) { return p2_done; }

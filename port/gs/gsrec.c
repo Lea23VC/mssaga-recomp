@@ -353,6 +353,12 @@ int gsrec_replay(const char *path, int warm) {
             gpu_seal_frame();
             GpuFrame *fr;
             double th = now_ms();
+            /* MS Saga: MSSAGA_REPLAY_SLOW=ms: each picture whose work (the GS since the last one, and with
+               MSSAGA_REPLAY_SHOTS the GPU's: uploads, draws) took longer, with what it uploaded */
+            static double slow_ms = -1, last_flip;
+            static u64 up_bytes_pic;
+            static u32 up_n_pic;
+            if (slow_ms < 0) { slow_ms = getenv("MSSAGA_REPLAY_SLOW") ? atof(getenv("MSSAGA_REPLAY_SLOW")) : 0; last_flip = th; }
             while ((fr = gpu_next_frame())) {
                 static u32 nframe;
                 if (pictures >= (u32)warm) { h = hash_frame(h, fr); draws += fr->ndraws; sealed++; }
@@ -383,6 +389,8 @@ int gsrec_replay(const char *path, int warm) {
                                            fr->verts[q].t, fr->verts[q].q);
                         }
                 }
+                for (u32 k = 0; k < fr->nuploads; k++) up_bytes_pic += (u64)fr->uploads[k].w * fr->uploads[k].h * 4;
+                up_n_pic += fr->nuploads;
                 if (shots) {
                     gpu_upload(fr);                         /* every frame drawn: the picture shown is often */
                     gpu_render(fr, NULL);                   /* the one drawn the frame before (double buffering) */
@@ -390,6 +398,15 @@ int gsrec_replay(const char *path, int warm) {
                 }
                 nframe++;
                 gpu_release_frame(fr);
+            }
+            if (slow_ms > 0) {
+                double now = now_ms();
+                if (now - last_flip > slow_ms)
+                    printf("slow picture %u: %.1f ms, %u uploads (%.1f MB)\n", pictures, now - last_flip, up_n_pic,
+                           up_bytes_pic / 1048576.0);
+                last_flip = now;
+                up_bytes_pic = 0;
+                up_n_pic = 0;
             }
             if (pictures >= (u32)warm) hashing += now_ms() - th;
             if (++pictures == (u32)warm) tw = now_ms();
