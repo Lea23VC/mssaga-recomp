@@ -34,6 +34,18 @@ int menu_open(void);
 int gpu_scale_now(void);                      /* gpu_vk.c: internal resolution */
 int gpu_scale_mode(void);
 void gpu_set_scale_mode(int m);
+int controls_count(void);                     /* controls.c: the bindings */
+const char *controls_label(int i);
+const char *controls_key_name(int i);
+const char *controls_pad_name(int i);
+int controls_held(int i);
+void controls_capture(int i, int kind);
+void controls_cancel(void);
+int controls_capturing(int i);
+int controls_pad_busy(void);
+void controls_reset(void);
+int controls_event(const SDL_Event *e);
+SDL_Gamepad *display_gamepad(int k);
 int cheats_count(void);                       /* runtime/cheats.c */
 const char *cheats_name(int i);
 const char *cheats_group(int i);
@@ -87,6 +99,7 @@ extern "C" int menu_open(void) { return open_; }
 extern "C" void menu_toggle(void) {
     open_ = !open_;
     confirm_exit = 0;
+    controls_cancel();
 }
 
 /* Every SDL event, first: 1 if the menu took it (the game must not see it) */
@@ -94,6 +107,7 @@ extern "C" int menu_event(const SDL_Event *e) {
     if (!ready) return 0;
     if (e->type == SDL_EVENT_KEY_DOWN && e->key.scancode == SDL_SCANCODE_F1 && !e->key.repeat) { menu_toggle(); return 1; }
     if (!open_) return 0;
+    if (controls_event(e)) return 1;                  /* a binding being waited for (Controls) */
     if (e->type == SDL_EVENT_KEY_DOWN && e->key.scancode == SDL_SCANCODE_ESCAPE && !e->key.repeat) {
         if (confirm_exit) confirm_exit = 0;
         else menu_toggle();
@@ -210,6 +224,42 @@ static void build(void) {
             }
             ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("Controls")) {
+            ImGui::TextWrapped("Click a key or a controller button, then press the new one. Esc: keep it, Delete: none. "
+                               "One already used elsewhere swaps places. A row lights up while its button is held.");
+            if (ImGui::BeginTable("controls", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
+                                                     ImGuiTableFlags_SizingStretchSame)) {
+                ImGui::TableSetupColumn("PS2 button");
+                ImGui::TableSetupColumn("Keyboard");
+                ImGui::TableSetupColumn("Controller");
+                ImGui::TableHeadersRow();
+                ImU32 lit = ImGui::GetColorU32(ImVec4(0.26f, 0.59f, 0.98f, 0.35f));
+                for (int i = 0; i < controls_count(); i++) {
+                    ImGui::PushID(i);
+                    ImGui::TableNextRow();
+                    if (controls_held(i)) ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, lit);
+                    ImGui::TableNextColumn();
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextUnformatted(controls_label(i));
+                    for (int kind = 1; kind <= 2; kind++) {
+                        ImGui::TableNextColumn();
+                        char b[96];
+                        if (controls_capturing(i) == kind)
+                            snprintf(b, sizeof b, "%s###b%d", kind == 1 ? "press a key..." : "press a button...", kind);
+                        else
+                            snprintf(b, sizeof b, "%s###b%d", kind == 1 ? controls_key_name(i) : controls_pad_name(i), kind);
+                        if (ImGui::Button(b, ImVec2(-FLT_MIN, 0))) controls_capture(i, kind);
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+            if (!display_gamepad(0)) ImGui::TextDisabled("No controller connected.");
+            if (ImGui::Button("Reset to defaults")) controls_reset();
+            ImGui::SameLine();
+            ImGui::TextDisabled("The sticks work as they are; START+SELECT opens this menu.");
+            ImGui::EndTabItem();
+        }
         if (ImGui::BeginTabItem("Cheats")) {
             ImGui::TextWrapped("Codes from the CheatDevicePS2 database. They change the game as it runs, and what they "
                                "change is kept when you save.");
@@ -272,6 +322,11 @@ static void build(void) {
 extern "C" void menu_draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
     if (!ready || !open_) return;
     ImGui_ImplSDLGPU3_NewFrame();
+    {   /* the controller doesn't move around the menu while a binding waits for it, or until the one bound is let go */
+        ImGuiIO &io = ImGui::GetIO();
+        if (controls_pad_busy()) io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
+        else io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    }
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
     build();

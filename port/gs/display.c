@@ -97,27 +97,11 @@ static u16 scripted(u32 vb) {
     return b;
 }
 
-/* keyboard: arrows, Z = CROSS, X = CIRCLE, A = SQUARE, S = TRIANGLE, Q/W = L1/R1, E/R = L2/R2,
-   Enter = START, Backspace = SELECT */
-static u16 keyboard(void) {
-    const bool *k = SDL_GetKeyboardState(NULL);
-    u16 b = 0;
-    if (k[SDL_SCANCODE_UP]) b |= PAD_UP;
-    if (k[SDL_SCANCODE_DOWN]) b |= PAD_DOWN;
-    if (k[SDL_SCANCODE_LEFT]) b |= PAD_LEFT;
-    if (k[SDL_SCANCODE_RIGHT]) b |= PAD_RIGHT;
-    if (k[SDL_SCANCODE_Z]) b |= PAD_CROSS;
-    if (k[SDL_SCANCODE_X]) b |= PAD_CIRCLE;
-    if (k[SDL_SCANCODE_A]) b |= PAD_SQUARE;
-    if (k[SDL_SCANCODE_S]) b |= PAD_TRIANGLE;
-    if (k[SDL_SCANCODE_Q]) b |= PAD_L1;
-    if (k[SDL_SCANCODE_W]) b |= PAD_R1;
-    if (k[SDL_SCANCODE_E]) b |= PAD_L2;
-    if (k[SDL_SCANCODE_R]) b |= PAD_R2;
-    if (k[SDL_SCANCODE_RETURN]) b |= PAD_START;
-    if (k[SDL_SCANCODE_BACKSPACE]) b |= PAD_SELECT;
-    return b;
-}
+/* keyboard and controllers: through the bindings (controls.c, F1 > Controls) */
+u16 controls_keyboard(void);
+u16 controls_gamepad(SDL_Gamepad *g);
+int controls_menu_combo(SDL_Gamepad *g);
+static u16 keyboard(void) { return controls_keyboard(); }
 
 /* Gamepads: the first plays port 1 (with the keyboard), the second port 2. */
 static SDL_Gamepad *gamepads[2];
@@ -141,22 +125,12 @@ static void gamepad_event(const SDL_Event *e) {
     pad_second = gamepads[1] != NULL;
 }
 
+SDL_Gamepad *display_gamepad(int k) { return k >= 0 && k < 2 ? gamepads[k] : NULL; }   /* controls.c */
+
 static u16 gamepad_buttons(int k) {
     SDL_Gamepad *gamepad = gamepads[k];
     if (!gamepad) return 0;
-    static const struct { SDL_GamepadButton b; u16 bit; } map[] = {
-        {SDL_GAMEPAD_BUTTON_SOUTH, PAD_CROSS}, {SDL_GAMEPAD_BUTTON_EAST, PAD_CIRCLE},
-        {SDL_GAMEPAD_BUTTON_WEST, PAD_SQUARE}, {SDL_GAMEPAD_BUTTON_NORTH, PAD_TRIANGLE},
-        {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, PAD_L1}, {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_R1},
-        {SDL_GAMEPAD_BUTTON_START, PAD_START}, {SDL_GAMEPAD_BUTTON_BACK, PAD_SELECT},
-        {SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_UP}, {SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_DOWN},
-        {SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_LEFT}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_RIGHT},
-        {SDL_GAMEPAD_BUTTON_LEFT_STICK, PAD_L3}, {SDL_GAMEPAD_BUTTON_RIGHT_STICK, PAD_R3}};
-    u16 b = 0;
-    for (size_t i = 0; i < sizeof map / sizeof *map; i++)
-        if (SDL_GetGamepadButton(gamepad, map[i].b)) b |= map[i].bit;
-    if (SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 16000) b |= PAD_L2;
-    if (SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 16000) b |= PAD_R2;
+    u16 b = controls_gamepad(gamepad);
     static const SDL_GamepadAxis axes[4] = {SDL_GAMEPAD_AXIS_RIGHTX, SDL_GAMEPAD_AXIS_RIGHTY,
                                            SDL_GAMEPAD_AXIS_LEFTX, SDL_GAMEPAD_AXIS_LEFTY};
     for (int i = 0; i < 4; i++) pad_sticks[k][i] = (u8)((SDL_GetGamepadAxis(gamepad, axes[i]) + 32768) >> 8);
@@ -178,8 +152,7 @@ SDL_GPUTextureFormat gpu_swap_format(void);
 static void poll_pads(void) {
     {   /* START + SELECT on the first gamepad: the settings menu */
         static int was;
-        int both = gamepads[0] && SDL_GetGamepadButton(gamepads[0], SDL_GAMEPAD_BUTTON_START) &&
-                   SDL_GetGamepadButton(gamepads[0], SDL_GAMEPAD_BUTTON_BACK);
+        int both = gamepads[0] && controls_menu_combo(gamepads[0]);
         if (both && !was) menu_toggle();
         was = both;
     }

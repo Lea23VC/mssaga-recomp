@@ -22,7 +22,7 @@ A gamepad (Xbox, PlayStation, ...) works as a DualShock 2. Keyboard:
 
   F1   settings menu (also Start+Select on a gamepad): widescreen, window
        size and full screen, resolution, V-Sync, HUD layout, turbo, Discord,
-       cheats
+       controls (rebind keys and controller buttons), cheats
   F2   widescreen 16:9 on / off (remembered)
   F3   performance panel
   F4   vsync on / off

@@ -1,5 +1,15 @@
 # Status
 
+## Controls: keys and controller buttons rebindable (2026-11-28)
+
+`port/gs/controls.c`: one keyboard key and one controller button (or trigger) per PS2 button, kept in the settings
+folder (`controls`: name, key, button, tab-separated, SDL's names). F1 > Controls: a table (PS2 button | keyboard |
+controller), click a cell and press the new one (Esc keeps it, Delete clears it, one in use elsewhere swaps); a row
+lights while its button is held; Reset to defaults. F1-F12, Tab and Esc can't be bound (the port's shortcuts). A
+controller wait ends after 5 s; while one is waited for, and until the bound button is let go, the menu ignores the
+controller (ImGui's gamepad navigation off). START+SELECT (the menu) follows the buttons bound to them. The sticks
+aren't rebound. Bound per button, not per action: the game only reads the pad. Played: works.
+
 ## Linux release (2026-11-27, v0.1.10)
 
 `build-linux.sh` builds `build-linux/` in a container (`tools/linux/Dockerfile`, Ubuntu 22.04: the program needs
@@ -128,6 +138,14 @@ before the mask closes). The GM-flicker case (the paused hangar cutscene from th
 every picture, as before. Played: two battles, no rectangle. Also: the recorder (F9) now works with
 `MSSAGA_GSTHREAD=0` too (the flip there skipped it).
 
+## Idea for later: a drawn controller in F1 > Controls (2026-11-28)
+
+The Controls tab is a table (PS2 button | keyboard key | controller button; a row lights while its button is held).
+Asked and left for later: a DualShock 2 drawn in the tab (ImGui draw list: body, d-pad, face buttons, shoulders,
+sticks), each button clickable to rebind it and lit while held, the bound key written next to it. About half a day
+more, mostly looks. The Tenkaichi 3 port (z3xox/Tenkaichi3Decomp, AGPL: not copied) has only a table plus a live
+view of each stick and its deadzone.
+
 ## Idea for later: settings inside the game (2026-11-26)
 
 Asked: switching widescreen (and the other F-key settings) from a menu instead of keys. Two ways, not started:
@@ -140,7 +158,7 @@ Asked: switching widescreen (and the other F-key settings) from a menu instead o
 - **The port's own overlay menu** (a key or Select+Start held): widescreen, window, V-Sync, Discord in one list,
   drawn like the F3 panel (`gpu_set_overlay`); about a day, works with a gamepad. Suggested first.
 
-## 16:9: split-screen scenes stay 4:3 (2026-11-26) — to do: make them 16:9
+## 16:9: split-screen scenes (2026-11-26; in 16:9 since 2026-11-28)
 
 The cutscene where the soldier talks to Tristan ("So you're a tough guy, huh?", ~vblank 5800 from NEW GAME) is two
 cameras drawn into two full-height boxes, a left half (scissor x 0-287) and a right half (224-511) cut by a slanted
@@ -148,7 +166,11 @@ line. The portrait rule (gpu_vk.c portrait_shifts) took them for two portraits a
 a black wedge in the middle and the text box cut. Boxes as tall as the screen (300+ lines) are no longer moved: the
 scene now shows as in 4:3, with the sides black or `sides.png`.
 
-**To do (decided to leave for now):** show such scenes in 16:9. Each half's camera draws into a raster 288 wide, so
+**Done 2026-11-28:** such scenes are 16:9. widescreen.c: a camera whose raster is the screen's height (300+) is not
+boxed, it gets the wider view; gs.c: VU1 draws with a full-height scissor narrower than the frame (`split`) are not
+`box` nor flat UI (the slanted strip at depth 0.999985 would have been), they count as 3D at the sides and are
+stretched with it, scissor included. The text box stays 4:3 in the middle. Played: both split scenes reached (the
+soldier and Tristan; Tristan and the boy in the cockpit), right proportions, the cut lines up. Was: Each half's camera draws into a raster 288 wide, so
 widescreen.c keeps its 4:3 view (boxed: raster under 400 wide), and gs.c marks its VU1 draws `box` (kept 4:3). For a
 full-height box, the camera could get the 4:3 x 4/3 view like a full-screen one and its draws go with the 3D
 (stretched): each half would reach its own edge of the 16:9 screen and the split stay where it is. Not done yet

@@ -26,7 +26,8 @@ Nothing from the game is in this repository or in its releases. You need your ow
   turns it off.
 - **Keys:** arrows, Z/X/A/S = Cross/Circle/Square/Triangle, Q/W/E/R = L1/R1/L2/R2, Enter = Start,
   Backspace = Select. F1 (or Start+Select on a gamepad) opens the settings menu: widescreen, window
-  size, resolution (anti-aliasing), V-Sync, HUD layout, turbo, cheats (236 codes) and more. F2 widescreen, F3 performance panel, F4 V-Sync, F9 records the next few
+  size, resolution (anti-aliasing), V-Sync, HUD layout, turbo, controls (rebind keys and controller buttons),
+  cheats (236 codes) and more. F2 widescreen, F3 performance panel, F4 V-Sync, F9 records the next few
   seconds of graphics for a bug report (`gsrec_*.gsrec` in the settings folder; started with
   `MSSAGA_GSREC_BACK=5`, it keeps the last 5 seconds in memory and F9 saves those too, to catch a glitch after
   seeing it). Tab: turbo, gameplay at double speed on maps and in battles (music and voices stay at normal
@@ -48,8 +49,7 @@ playthrough hasn't been done yet. See [docs/status.md](docs/status.md), [docs/re
 - **30 fps**, as on the PS2. A 60 fps mode was tried and parked: the game's logic and animations are tied to
   its frame rate.
 - **Widescreen (16:9)** shows more of the 3D at the sides, but some screens stay 4:3 with black sides (or your
-  `sides.png`): menus, the title, story pictures, and scenes where the game splits the screen into two views
-  (both halves stay 4:3 for now). If something looks stretched, cut or out of place in 16:9, press F9 right
+  `sides.png`): menus, the title and story pictures. If something looks stretched, cut or out of place in 16:9, press F9 right
   there and attach the `gsrec_*.gsrec` file to your report; F2 switches back to the PS2's 4:3 picture.
 
 ## Building (Linux; developed on CachyOS)
