@@ -1,5 +1,15 @@
 # Status
 
+## Linux release (2026-11-27, v0.1.10)
+
+`build-linux.sh` builds `build-linux/` in a container (`tools/linux/Dockerfile`, Ubuntu 22.04: the program needs
+glibc 2.34 at most, so it runs on distros from 2022 on, not only on the rolling one it was made on). SDL3 3.2.30 is
+built there from source (`tools/linux_deps.sh` fetches it; X11, Wayland, PipeWire, PulseAudio, ALSA are opened at
+run time); FFmpeg is BtbN's LGPL shared build for Linux, as on Windows (the system's pulls in ~100 libraries). Both go
+in `lib/` (the program's rpath is `$ORIGIN/lib`). `-DMSSAGA_LINUX_RELEASE`: not started from a terminal, the log goes
+to `~/.local/share/mssaga/mssaga.log`. `tools/package-linux.sh` makes the `.tar.gz` (contents at the top, as the
+Windows zip). Run unpacked from the archive on CachyOS: finds the ISO, copies the executable out of it, Vulkan.
+
 ## Resolution setting (anti-aliasing) (2026-11-27)
 
 F1 > Video > Resolution: Auto (about 1.5 times the window's height, up to 4x, as before) or a fixed 2x to 8x the PS2's

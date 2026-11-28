@@ -112,6 +112,21 @@ static void win_log_setup(void) {
 }
 #endif
 
+#ifdef MSSAGA_LINUX_RELEASE
+#include <unistd.h>
+/* the Linux release (build-linux.sh): started from a file manager or a launcher, not a terminal, the log goes to
+   mssaga.log in the settings folder, as on Windows */
+static void linux_log_setup(void) {
+    if (isatty(2)) return;
+    char dir[1024], path[1100];
+    platform_data_dir(dir, sizeof dir);
+    snprintf(path, sizeof path, "%s/mssaga.log", dir);
+    if (freopen(path, "w", stderr)) setvbuf(stderr, NULL, _IONBF, 0);
+    dup2(2, 1);
+    setvbuf(stdout, NULL, _IOLBF, 0);
+}
+#endif
+
 static void *game_main(void *arg) {
     (void)arg;
     kernel_init();
@@ -248,6 +263,9 @@ int main(int argc, char **argv) {
     }
 #ifdef _WIN32
     win_log_setup();                              /* after --data: the log goes there */
+#endif
+#ifdef MSSAGA_LINUX_RELEASE
+    linux_log_setup();
 #endif
     if (!elf) elf = find_file("disc/SLUS_212.70");
     if (gen_vu) {

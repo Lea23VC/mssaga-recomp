@@ -13,6 +13,9 @@ Nothing from the game is in this repository or in its releases. You need your ow
   1,632,796,672 bytes, CRC32 `e7c78655`.
 - **Windows:** unzip the release and start `mssaga.exe`. The first time it asks for your `.iso` and remembers it.
   Saves, settings and the log are in `%APPDATA%\mssaga` (see `README.txt` in the release).
+- **Linux:** unpack the release's `.tar.gz` and run `./mssaga` (keep the `lib` folder next to it). It runs on
+  distros from 2022 on (Ubuntu 22.04, Debian 12, Fedora 36, Arch, the Steam Deck) with a Vulkan driver. Saves,
+  settings and the log are in `~/.local/share/mssaga`.
 - **RecompLauncher:** the release carries a `recomplauncher.json`, so the launcher sets it up from your `.iso`
   and shows the picture, window and V-Sync settings on the game's page.
 - **Command line:** `mssaga --game <your.iso> [--data <folder>] [--widescreen on|off] [--window full|WxH]
@@ -39,7 +42,7 @@ playthrough hasn't been done yet. See [docs/status.md](docs/status.md), [docs/re
 - **Not played to the end.** Tested from the start through the first chapter (story, field, battles, saving);
   later areas may still break. Problems found there are fixed as they come up.
 - **Windows** builds are cross-compiled and have not been run on a real Windows machine yet.
-- **No Linux release:** on Linux, build it from source (below).
+- **Linux** release: built on Ubuntu 22.04 in a container; tested on CachyOS so far.
 - **USA release only** (SLUS-21270). The Japanese release (*Gundam True Odyssey*) isn't supported.
 - **30 fps**, as on the PS2. A 60 fps mode was tried and parked: the game's logic and animations are tied to
   its frame rate.
@@ -61,6 +64,9 @@ bsdtar -xf disc/game.iso -C disc SLUS_212.70 SYSTEM.CNF
 
 Needs: gcc, python3, SDL3, Vulkan headers, glslang, pkg-config, and FFmpeg for the movies (CachyOS / Arch:
 `pacman -S base-devel python sdl3 vulkan-headers glslang pkgconf ffmpeg`).
+
+Linux release (runs on older distros too): `tools/linux_deps.sh`, then `./build-linux.sh` (in an Ubuntu 22.04
+container, needs docker) and `tools/package-linux.sh` → `build/mssaga-recomp-<version>-linux-x64.tar.gz`.
 
 Windows release, cross-compiled: `pacman -S mingw-w64-gcc`, then `tools/win_deps.sh` (SDL3 and FFmpeg for
 MinGW), `./build-win.sh` and `tools/package-win.sh` → `build/mssaga-recomp-<version>-windows-x64.zip`.

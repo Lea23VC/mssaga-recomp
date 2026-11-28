@@ -71,7 +71,7 @@ rm -f build-win/mssaga.bat                     # (older builds: it held one pers
 cp docs/windows-README.txt build-win/README.txt
 cp recomplauncher.json build-win/              # RecompLauncher reads it from the top of the release zip
 mkdir -p build-win/licenses
-cp licenses/SaintSeiyaRecomp-MIT.txt build-win/licenses/
+cp licenses/SaintSeiyaRecomp-MIT.txt licenses/DearImGui-MIT.txt build-win/licenses/
 cp tools/win/SDL3-3.2.30/LICENSE.txt build-win/licenses/SDL3-zlib.txt
 [ -z "$FF" ] || cp "$FF"/LICENSE.txt build-win/licenses/FFmpeg-LGPL.txt
 echo "built build-win/mssaga.exe"
