@@ -135,31 +135,67 @@ const char *controls_key_name(int i) {
     return s && *s ? s : "?";
 }
 
-const char *controls_pad_name(int i) {
-    load();
-    if (i < 0 || i >= NB) return "";
-    switch (binds[i].pad) {
+/* a controller button's name as written on the controller connected (PlayStation, Xbox, Nintendo), or both
+   usual names when none is connected or its kind is unknown */
+static const char *pad_name_for(int p, SDL_Gamepad *g) {
+    SDL_GamepadType t = g ? SDL_GetGamepadType(g) : SDL_GAMEPAD_TYPE_UNKNOWN;
+    int ps = t == SDL_GAMEPAD_TYPE_PS3 || t == SDL_GAMEPAD_TYPE_PS4 || t == SDL_GAMEPAD_TYPE_PS5;
+    int xb = t == SDL_GAMEPAD_TYPE_XBOX360 || t == SDL_GAMEPAD_TYPE_XBOXONE;
+    int nin = t == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO || t == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT ||
+              t == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT || t == SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR;
+    if (p == SDL_GAMEPAD_BUTTON_SOUTH || p == SDL_GAMEPAD_BUTTON_EAST || p == SDL_GAMEPAD_BUTTON_WEST ||
+        p == SDL_GAMEPAD_BUTTON_NORTH) {
+        if (ps || xb || nin)
+            switch (SDL_GetGamepadButtonLabelForType(t, (SDL_GamepadButton)p)) {
+            case SDL_GAMEPAD_BUTTON_LABEL_A: return "A";
+            case SDL_GAMEPAD_BUTTON_LABEL_B: return "B";
+            case SDL_GAMEPAD_BUTTON_LABEL_X: return "X";
+            case SDL_GAMEPAD_BUTTON_LABEL_Y: return "Y";
+            case SDL_GAMEPAD_BUTTON_LABEL_CROSS: return "Cross";
+            case SDL_GAMEPAD_BUTTON_LABEL_CIRCLE: return "Circle";
+            case SDL_GAMEPAD_BUTTON_LABEL_SQUARE: return "Square";
+            case SDL_GAMEPAD_BUTTON_LABEL_TRIANGLE: return "Triangle";
+            default: break;
+            }
+        return p == SDL_GAMEPAD_BUTTON_SOUTH ? "A / Cross" : p == SDL_GAMEPAD_BUTTON_EAST ? "B / Circle"
+             : p == SDL_GAMEPAD_BUTTON_WEST ? "X / Square" : "Y / Triangle";
+    }
+    switch (p) {
     case NONE: return "-";
-    case TRIG_L: return "LT / L2";
-    case TRIG_R: return "RT / R2";
-    case SDL_GAMEPAD_BUTTON_SOUTH: return "A / Cross";
-    case SDL_GAMEPAD_BUTTON_EAST: return "B / Circle";
-    case SDL_GAMEPAD_BUTTON_WEST: return "X / Square";
-    case SDL_GAMEPAD_BUTTON_NORTH: return "Y / Triangle";
-    case SDL_GAMEPAD_BUTTON_BACK: return "Back / Select";
-    case SDL_GAMEPAD_BUTTON_GUIDE: return "Guide";
-    case SDL_GAMEPAD_BUTTON_START: return "Start";
-    case SDL_GAMEPAD_BUTTON_LEFT_STICK: return "Left stick click";
-    case SDL_GAMEPAD_BUTTON_RIGHT_STICK: return "Right stick click";
-    case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: return "LB / L1";
-    case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return "RB / R1";
+    case TRIG_L: return ps ? "L2" : xb ? "LT" : nin ? "ZL" : "LT / L2";
+    case TRIG_R: return ps ? "R2" : xb ? "RT" : nin ? "ZR" : "RT / R2";
+    case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: return ps ? "L1" : xb ? "LB" : nin ? "L" : "LB / L1";
+    case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return ps ? "R1" : xb ? "RB" : nin ? "R" : "RB / R1";
+    case SDL_GAMEPAD_BUTTON_LEFT_STICK: return ps ? "L3" : xb ? "LS (left stick click)" : "Left stick click";
+    case SDL_GAMEPAD_BUTTON_RIGHT_STICK: return ps ? "R3" : xb ? "RS (right stick click)" : "Right stick click";
+    case SDL_GAMEPAD_BUTTON_BACK:
+        return t == SDL_GAMEPAD_TYPE_PS5 ? "Create" : t == SDL_GAMEPAD_TYPE_PS4 ? "Share" : t == SDL_GAMEPAD_TYPE_PS3 ? "Select"
+             : t == SDL_GAMEPAD_TYPE_XBOXONE ? "View" : t == SDL_GAMEPAD_TYPE_XBOX360 ? "Back" : nin ? "-  (minus)" : "Back / Select";
+    case SDL_GAMEPAD_BUTTON_START:
+        return t == SDL_GAMEPAD_TYPE_PS4 || t == SDL_GAMEPAD_TYPE_PS5 ? "Options" : t == SDL_GAMEPAD_TYPE_XBOXONE ? "Menu"
+             : nin ? "+  (plus)" : "Start";
+    case SDL_GAMEPAD_BUTTON_GUIDE: return ps ? "PS button" : xb ? "Xbox button" : nin ? "Home" : "Guide";
     case SDL_GAMEPAD_BUTTON_DPAD_UP: return "D-pad up";
     case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return "D-pad down";
     case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return "D-pad left";
     case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: return "D-pad right";
     case SDL_GAMEPAD_BUTTON_TOUCHPAD: return "Touchpad";
-    default: return pad_string(binds[i].pad);
+    case SDL_GAMEPAD_BUTTON_MISC1: return nin ? "Capture" : xb ? "Share" : ps ? "Mic" : "Misc";
+    default: return pad_string(p);
     }
+}
+
+const char *controls_pad_name(int i) {
+    load();
+    return i >= 0 && i < NB ? pad_name_for(binds[i].pad, display_gamepad(0)) : "";
+}
+
+/* the first controller's name (it plays as the PS2's first pad), or NULL */
+const char *controls_gamepad_name(void) {
+    SDL_Gamepad *g = display_gamepad(0);
+    if (!g) return NULL;
+    const char *n = SDL_GetGamepadName(g);
+    return n && *n ? n : "Controller";
 }
 
 /* the row's button held now (keyboard or the first controller): the menu lights it */

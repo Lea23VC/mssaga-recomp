@@ -38,6 +38,7 @@ int controls_count(void);                     /* controls.c: the bindings */
 const char *controls_label(int i);
 const char *controls_key_name(int i);
 const char *controls_pad_name(int i);
+const char *controls_gamepad_name(void);
 int controls_held(int i);
 void controls_capture(int i, int kind);
 void controls_cancel(void);
@@ -227,6 +228,8 @@ static void build(void) {
         if (ImGui::BeginTabItem("Controls")) {
             ImGui::TextWrapped("Click a key or a controller button, then press the new one. Esc: keep it, Delete: none. "
                                "One already used elsewhere swaps places. A row lights up while its button is held.");
+            if (const char *gn = controls_gamepad_name()) ImGui::Text("Controller: %s", gn);
+            else ImGui::TextDisabled("No controller connected.");
             if (ImGui::BeginTable("controls", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
                                                      ImGuiTableFlags_SizingStretchSame)) {
                 ImGui::TableSetupColumn("PS2 button");
@@ -254,7 +257,6 @@ static void build(void) {
                 }
                 ImGui::EndTable();
             }
-            if (!display_gamepad(0)) ImGui::TextDisabled("No controller connected.");
             if (ImGui::Button("Reset to defaults")) controls_reset();
             ImGui::SameLine();
             ImGui::TextDisabled("The sticks work as they are; START+SELECT opens this menu.");
