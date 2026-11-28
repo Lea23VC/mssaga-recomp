@@ -15,7 +15,7 @@
  *
  * On by default with the GPU renderer (the software one shows the PS2's picture as it is);
  * MSSAGA_WIDESCREEN=0 or F2 (remembered): the PS2's 4:3. Cameras drawing into a box of the screen (portraits, the
- * minimap) keep their window.
+ * minimap) keep their window; the two full-height halves of a split scene widen.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -119,7 +119,10 @@ void hle_RwCameraBeginUpdate(Ctx *c) {
     int i = -1;
     for (int k = 0; k < MAX_CAMS; k++) if (cams[k].cam == cam) i = k;
     if (i < 0 || !fb) return;                           /* a window the hook never saw: left as it is */
-    cams[i].boxed = rd32(c, fb + 0x0C) < 400;            /* narrower than the 512-wide screen: a box */
+    /* narrower than the 512-wide screen: a box. Not a half of a split scene (two cameras side by side, each the
+       screen's whole height, two characters talking): those widen as the full screen does, and the renderer
+       stretches them across 16:9 (gs.c) */
+    cams[i].boxed = rd32(c, fb + 0x0C) < 400 && rd32(c, fb + 0x10) < 300;
     int wide = widescreen_on() && !cams[i].boxed;
     if (wide != cams[i].wide) {
         cams[i].wide = wide;

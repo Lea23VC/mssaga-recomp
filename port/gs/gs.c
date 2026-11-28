@@ -1286,7 +1286,12 @@ static void classify(GpuDraw *d, int type, u32 first) {
     }
     /* MS Saga: 3D drawn into a box cut out of the screen (a dialogue portrait, the minimap's view: VU1 with a scissor
        narrower than the frame) goes with the 2D around it, kept 4:3 */
-    d->box = gs_cur_path == 1 && type >= 3 && !full_scissor && d->scissor[1] < fw;
+    /* Not a half of a split scene (two characters talking, each in a box the screen's whole height, cut on a slant):
+       its camera widens as the full screen does (hle/widescreen.c), so it is 3D across 16:9, the slanted cut (a
+       strip in the 64 pixels both halves share) with it */
+    int split = gs_cur_path == 1 && type >= 3 && !full_scissor && d->scissor[1] < fw &&
+                d->scissor[3] - d->scissor[2] >= 300;
+    d->box = gs_cur_path == 1 && type >= 3 && !full_scissor && d->scissor[1] < fw && !split;
     if (d->box) d->flat2d = 1;
     /* MS Saga: lines (a portrait's frame, drawn through VU1 with the whole screen as scissor) are 2D too */
     if ((type == 1 || type == 2) && d->scissor[1] < fw) d->flat2d = 1;
@@ -1296,7 +1301,7 @@ static void classify(GpuDraw *d, int type, u32 first) {
        fading to nothing at the rim): they go on stretched with the 3D, all their pieces together (placed apart,
        their seams showed as beams). A menu's highlight bar is added on too, but evenly: it stays with its menu.
        Nor the picture drawn again over itself (a soft glow over the whole field): it covers the 16:9 screen */
-    if (gs_cur_path == 1 && type >= 3 && !d->flat2d && d->count && d->tex >= -1) {
+    if (gs_cur_path == 1 && type >= 3 && !d->flat2d && !split && d->count && d->tex >= -1) {
         float z = rec->verts[first].z;
         int additive = d->abe && (d->alpha & 0xFF) == 0x48;      /* Cs * As + Cd: light */
         int fades = 0;                                          /* a glow: its alpha falls to its rim */
@@ -1320,7 +1325,7 @@ static void classify(GpuDraw *d, int type, u32 first) {
        picture (menus clear to black: their sides stay black, or show sides.png) */
     const GpuVertex *cv = &rec->verts[first];
     int colour_clear = !d->flat2d && !d->textured && d->count && cv->r + cv->g + cv->b > 0.0f;
-    d->sides = !d->flat2d && (d->tex >= 0 || gs_cur_path == 1 || colour_clear) && full_scissor &&
+    d->sides = !d->flat2d && (d->tex >= 0 || gs_cur_path == 1 || colour_clear) && (full_scissor || split) &&
                (x0 < fw / 8.0f || x1 > fw * 7 / 8.0f);
     int fight_on(void);                         /* port/hle/training.c */
     d->fight = d->flat2d && fight_on();
